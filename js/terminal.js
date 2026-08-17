@@ -459,42 +459,111 @@ class TerminalShell {
   }
 
   cmdLs(args) {
-    const showAll = args.some(a => a.includes('a'));
-    const isLong = args.some(a => a.includes('l'));
-    
-    // Find target path if provided
-    const pathArg = args.find(a => !a.startsWith('-')) || '.';
-    const resolved = window.vfs.resolve(this.cwd, pathArg);
+    let showAll = false;
+    let isLong = false;
+    let sortByTime = false;
+    let sortBySize = false;
+    let reverseSort = false;
+    let humanReadable = false;
+    let singleColumn = false;
+    let targetPath = '.';
+
+    for (const arg of args) {
+      if (arg.startsWith('-') && arg.length > 1) {
+        for (const char of arg.slice(1)) {
+          if (char === 'a') showAll = true;
+          else if (char === 'l') isLong = true;
+          else if (char === 't') sortByTime = true;
+          else if (char === 'r') reverseSort = true;
+          else if (char === 'h') humanReadable = true;
+          else if (char === 'S') sortBySize = true;
+          else if (char === '1') singleColumn = true;
+        }
+      } else {
+        targetPath = arg;
+      }
+    }
+
+    const resolved = window.vfs.resolve(this.cwd, targetPath);
 
     if (!window.vfs.exists(resolved)) {
-      return `<span style="color:var(--accent-danger)">ls: cannot access '${this.escapeHtml(pathArg)}': No such file or directory</span>`;
+      return `<span style="color:var(--accent-danger)">ls: cannot access '${this.escapeHtml(targetPath)}': No such file or directory</span>`;
     }
 
     if (window.vfs.isFile(resolved)) {
       const node = window.vfs.getNode(resolved);
+      const sizeStr = this.formatSize(node.size, humanReadable);
       return isLong 
-        ? `${node.permissions} 1 ${node.owner} ${node.group} ${String(node.size).padStart(6, ' ')} ${this.formatDate(node.mtime)} <span class="term-exec">${node.name}</span>`
+        ? `${node.permissions} 1 ${node.owner} ${node.group} ${sizeStr.padStart(6, ' ')} ${this.formatDate(node.mtime)} <span class="term-exec">${node.name}</span>`
         : `<span class="term-exec">${node.name}</span>`;
     }
 
-    const items = window.vfs.readdir(resolved) || [];
-    const filtered = showAll ? items : items.filter(i => !i.name.startsWith('.'));
+    let items = (window.vfs.readdir(resolved) || []).slice();
 
-    if (filtered.length === 0) return '';
+    if (showAll) {
+      const parentDir = window.vfs.resolve(resolved, '..');
+      const currNode = window.vfs.getNode(resolved);
+      const parentNode = window.vfs.getNode(parentDir);
+
+      const dotEntries = [
+        {
+          name: '.',
+          type: 'dir',
+          permissions: 'drwxr-xr-x',
+          owner: currNode?.owner || 'user',
+          group: currNode?.group || 'user',
+          size: 4096,
+          mtime: currNode?.mtime || new Date()
+        },
+        {
+          name: '..',
+          type: 'dir',
+          permissions: 'drwxr-xr-x',
+          owner: parentNode?.owner || 'root',
+          group: parentNode?.group || 'root',
+          size: 4096,
+          mtime: parentNode?.mtime || new Date()
+        }
+      ];
+      items = dotEntries.concat(items);
+    } else {
+      items = items.filter(i => !i.name.startsWith('.'));
+    }
+
+    if (items.length === 0) return '';
+
+    // Sorting logic
+    if (sortByTime) {
+      items.sort((a, b) => {
+        const timeA = new Date(a.mtime || 0).getTime();
+        const timeB = new Date(b.mtime || 0).getTime();
+        return timeB - timeA; // Newest first
+      });
+    } else if (sortBySize) {
+      items.sort((a, b) => (b.size || 0) - (a.size || 0)); // Largest first
+    } else {
+      items.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    if (reverseSort) {
+      items.reverse();
+    }
 
     if (isLong) {
-      let html = `<div style="color:var(--text-muted); margin-bottom:4px;">total ${filtered.length * 4}</div><table class="term-table">`;
-      for (const item of filtered) {
+      const totalBlocks = Math.ceil(items.reduce((acc, i) => acc + (i.size || 0), 0) / 1024) * 4;
+      let html = `<div style="color:var(--text-muted); margin-bottom:4px;">total ${totalBlocks}</div><table class="term-table">`;
+      for (const item of items) {
         const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
+        const sizeStr = this.formatSize(item.size, humanReadable);
         html += `
           <tr>
             <td>${item.permissions}</td>
             <td>1</td>
             <td>${item.owner}</td>
             <td>${item.group}</td>
-            <td style="text-align:right;">${item.size}</td>
+            <td style="text-align:right;">${sizeStr}</td>
             <td>${this.formatDate(item.mtime)}</td>
-            <td><span class="${typeClass}">${item.name}${item.type === 'dir' ? '/' : ''}</span></td>
+            <td><span class="${typeClass}">${item.name}${item.type === 'dir' && item.name !== '.' && item.name !== '..' ? '/' : ''}</span></td>
           </tr>
         `;
       }
@@ -502,8 +571,15 @@ class TerminalShell {
       return html;
     }
 
+    if (singleColumn) {
+      return items.map(item => {
+        const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
+        return `<div class="${typeClass}">${item.name}${item.type === 'dir' ? '/' : ''}</div>`;
+      }).join('');
+    }
+
     // Grid layout
-    return filtered.map(item => {
+    return items.map(item => {
       const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
       return `<span class="${typeClass}" style="display:inline-block; min-width:140px; margin-right:16px;">${item.name}${item.type === 'dir' ? '/' : ''}</span>`;
     }).join('');
@@ -1289,13 +1365,13 @@ class TerminalShell {
         <tr><td><strong style="color:var(--accent-primary)">wget [-O &lt;file&gt;] &lt;url&gt;</strong></td><td>Download file from internet URL directly into VFS</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">download &lt;file&gt;</strong></td><td>Download/Export file to your computer's Downloads folder</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">vfs-export / vfs-import</strong></td><td>Backup or restore entire Virtual Filesystem as JSON archive</td></tr>
-        <tr><td><strong style="color:var(--accent-primary)">ls [-la]</strong></td><td>List files in current directory with colors/permissions</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">ls [-latrSh1]</strong></td><td>List files with permissions, sort by time (-t), reverse (-r), all (-a), size (-S)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">tree</strong></td><td>Display directory hierarchy tree</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">cd &lt;dir&gt;</strong></td><td>Change directory (cd ~, cd .., cd /etc)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">pwd</strong></td><td>Print current working directory</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">mkdir &lt;dir&gt;</strong></td><td>Create new directory (-p for recursive)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">touch &lt;file&gt;</strong></td><td>Create empty file</td></tr>
-        <tr><td><strong style="color:var(--accent-primary)">cat &lt;file&gt;</strong></td><td>Print file contents to screen</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">cat &lt;file&gt;</strong></td><td>Print file contents to screen (GFM graphical markdown for .md)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">echo "str" &gt; &lt;file&gt;</strong></td><td>Redirect text output to file</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">rm [-r] &lt;target&gt;</strong></td><td>Remove file or directory</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">cp &lt;src&gt; &lt;dst&gt;</strong></td><td>Copy file</td></tr>
@@ -1310,8 +1386,18 @@ class TerminalShell {
     `;
   }
 
+  formatSize(bytes, humanReadable = false) {
+    if (!humanReadable) return String(bytes || 0);
+    const b = Number(bytes) || 0;
+    if (b < 1024) return `${b}`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)}K`;
+    if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)}M`;
+    return `${(b / (1024 * 1024 * 1024)).toFixed(1)}G`;
+  }
+
   formatDate(dateObj) {
     if (!dateObj) dateObj = new Date();
+    if (typeof dateObj === 'string' || typeof dateObj === 'number') dateObj = new Date(dateObj);
     const m = dateObj.toLocaleString('en-US', { month: 'short' });
     const d = dateObj.getDate().toString().padStart(2, ' ');
     const t = dateObj.toTimeString().slice(0, 5);

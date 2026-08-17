@@ -139,17 +139,18 @@ class TerminalShell {
   handleTabCompletion() {
     const text = this.cmdInput.value;
     const tokens = text.split(/\s+/);
-    const lastToken = tokens[tokens.length - 1];
+    const lastToken = tokens[tokens.length - 1] || '';
 
     if (tokens.length === 1 && !text.includes(' ')) {
-      // Command autocompletion
+      // Command autocompletion (case-insensitive)
       const allCommands = [
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
         'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
         'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'curl', 'wget', 'vfs-import',
         'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
       ];
-      const matches = allCommands.filter(c => c.startsWith(lastToken));
+      const lowerLastToken = lastToken.toLowerCase();
+      const matches = allCommands.filter(c => c.toLowerCase().startsWith(lowerLastToken));
       if (matches.length === 1) {
         this.cmdInput.value = matches[0] + ' ';
       } else if (matches.length > 1) {
@@ -158,18 +159,89 @@ class TerminalShell {
         this.scrollToBottom();
       }
     } else {
-      // File / Directory autocompletion
-      const currentItems = window.vfs.readdir(this.cwd) || [];
-      const matchPrefix = lastToken.startsWith('/') ? lastToken : lastToken;
-      const candidates = currentItems.map(i => i.type === 'dir' ? i.name + '/' : i.name);
-      const matches = candidates.filter(name => name.startsWith(matchPrefix));
+      // File / Directory autocompletion (case-insensitive)
+      let searchDir = this.cwd;
+      let filePrefix = lastToken;
+      let pathPrefix = '';
 
-      if (matches.length === 1) {
-        tokens[tokens.length - 1] = matches[0];
+      if (lastToken.includes('/')) {
+        const lastSlashIndex = lastToken.lastIndexOf('/');
+        pathPrefix = lastToken.slice(0, lastSlashIndex + 1);
+        filePrefix = lastToken.slice(lastSlashIndex + 1);
+
+        // Resolve directory path case-insensitively segment-by-segment
+        const rawSegments = pathPrefix.split('/').filter(Boolean);
+        let currentResolved = pathPrefix.startsWith('/') ? '/' : this.cwd;
+        let resolvedPathPrefix = pathPrefix.startsWith('/') ? '/' : '';
+
+        let pathValid = true;
+        for (const seg of rawSegments) {
+          if (seg === '.') {
+            resolvedPathPrefix += './';
+            continue;
+          }
+          if (seg === '..') {
+            currentResolved = window.vfs.resolve(currentResolved, '..');
+            resolvedPathPrefix += '../';
+            continue;
+          }
+          if (seg === '~') {
+            currentResolved = '/home/user';
+            resolvedPathPrefix = '~/';
+            continue;
+          }
+
+          const items = window.vfs.readdir(currentResolved) || [];
+          const matchDir = items.find(i => i.type === 'dir' && i.name.toLowerCase() === seg.toLowerCase());
+          if (matchDir) {
+            currentResolved = window.vfs.resolve(currentResolved, matchDir.name);
+            resolvedPathPrefix += matchDir.name + '/';
+          } else {
+            pathValid = false;
+            break;
+          }
+        }
+
+        if (pathValid) {
+          searchDir = currentResolved;
+          pathPrefix = resolvedPathPrefix;
+        } else {
+          searchDir = window.vfs.resolve(this.cwd, pathPrefix);
+        }
+      }
+
+      const currentItems = window.vfs.readdir(searchDir) || [];
+      const lowerFilePrefix = filePrefix.toLowerCase();
+      
+      const matchingItems = currentItems.filter(item => 
+        item.name.toLowerCase().startsWith(lowerFilePrefix)
+      );
+
+      if (matchingItems.length === 1) {
+        const item = matchingItems[0];
+        const completion = pathPrefix + item.name + (item.type === 'dir' ? '/' : ' ');
+        tokens[tokens.length - 1] = completion;
         this.cmdInput.value = tokens.join(' ');
-      } else if (matches.length > 1) {
+      } else if (matchingItems.length > 1) {
+        const names = matchingItems.map(i => i.type === 'dir' ? i.name + '/' : i.name);
+
+        // Find longest common prefix among matching items (case-insensitive comparison)
+        let commonPrefix = names[0];
+        for (let i = 1; i < names.length; i++) {
+          let j = 0;
+          while (j < commonPrefix.length && j < names[i].length && commonPrefix[j].toLowerCase() === names[i][j].toLowerCase()) {
+            j++;
+          }
+          commonPrefix = commonPrefix.slice(0, j);
+        }
+
+        if (commonPrefix.length > filePrefix.length) {
+          tokens[tokens.length - 1] = pathPrefix + commonPrefix;
+          this.cmdInput.value = tokens.join(' ');
+        }
+
         this.appendOutput(`${this.getPromptHtml()} ${text}`);
-        this.appendOutput(matches.join('  '));
+        this.appendOutput(names.join('  '));
         this.scrollToBottom();
       }
     }

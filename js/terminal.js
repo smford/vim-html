@@ -147,7 +147,7 @@ class TerminalShell {
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
         'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
         'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'curl', 'wget', 'vfs-import',
-        'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
+        'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme', 'version', 'ver'
       ];
       const lowerLastToken = lastToken.toLowerCase();
       const matches = allCommands.filter(c => c.toLowerCase().startsWith(lowerLastToken));
@@ -364,6 +364,12 @@ class TerminalShell {
       case 'help':
         return this.cmdHelp();
 
+      case 'version':
+      case 'ver':
+      case '--version':
+      case '-v':
+        return this.cmdVersion();
+
       case 'date':
         return new Date().toUTCString();
 
@@ -447,7 +453,11 @@ class TerminalShell {
   // ==========================================
 
   cmdVim(args) {
-    const fileName = args[0] || 'untitled.txt';
+    if (args.includes('--version') || args.includes('-v')) {
+      return this.cmdVersion();
+    }
+
+    const fileName = args.find(a => !a.startsWith('-')) || 'untitled.txt';
     const resolvedPath = window.vfs.resolve(this.cwd, fileName);
     const content = window.vfs.readFile(resolvedPath) || '';
 
@@ -456,6 +466,25 @@ class TerminalShell {
     if (this.activeIndicator) this.activeIndicator.textContent = 'VIM';
     window.vimApp.openFile(resolvedPath, content);
     return '';
+  }
+
+  cmdVersion() {
+    return `
+      <div style="font-family:var(--font-mono); line-height:1.6; font-size:12.5px;">
+        <div style="color:var(--accent-primary); font-weight:bold; font-size:13.5px; margin-bottom:2px;">vim-html v2.4.0 (x86_64-linux-wasm)</div>
+        <div style="color:var(--text-secondary);">VIM - Vi IMproved 9.1 (Included patches: 1-1842)</div>
+        <div style="color:var(--text-muted); font-size:11.5px; margin: 4px 0 10px 0;">Compiled by sre-core-team@sre-node-01 on Mon Aug 17 2026 22:45:00 UTC</div>
+        <div style="color:var(--accent-secondary); font-weight:600; margin-bottom:4px;">Engine & Environment Specifications:</div>
+        <table class="term-table" style="max-width:580px;">
+          <tr><td><strong style="color:var(--text-primary)">Kernel Release:</strong></td><td>Linux 6.12.8-sre-generic #42-SMP PREEMPT</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Virtual Filesystem:</strong></td><td>Hierarchical In-Memory VFS (v2.0, JSON Snapshotting)</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Audio Subsystem:</strong></td><td>Web Audio API Polyphonic Synthesizer</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Terminal Shell:</strong></td><td>SRE GNU/Bash 5.2 Emulation Layer</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Features:</strong></td><td>+syntax +gfm_markdown +curl +wget +vfs_backup +sound +themes +latr</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">License:</strong></td><td>Vim charityware / MIT Open Source</td></tr>
+        </table>
+      </div>
+    `;
   }
 
   cmdLs(args) {
@@ -1379,6 +1408,7 @@ class TerminalShell {
         <tr><td><strong style="color:var(--accent-primary)">grep &lt;pat&gt; &lt;file&gt;</strong></td><td>Search pattern inside file</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">top / ps</strong></td><td>View running processes and live CPU/Memory utilization</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">df / free</strong></td><td>View disk storage and RAM statistics</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">version / ver</strong></td><td>Display vim-html engine version, build info, and specifications</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">theme &lt;name&gt;</strong></td><td>Switch theme (gruvbox, nord, monokai, dracula, etc.)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">clear</strong></td><td>Clear terminal screen (Ctrl+L)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">reboot</strong></td><td>Restart kernel boot simulation</td></tr>

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vim-html — Linux Terminal & Authentic Vim Editor</title>
+  <meta name="description" content="An authentic in-browser Vim replica and Linux terminal simulation with virtual filesystem, syntax highlighting, and file download support.">
+  
+  <!-- Modern Monospace & UI Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  
+  <!-- Application Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/terminal.css">
+  <link rel="stylesheet" href="css/vim.css">
+  
+  <!-- Favicon SVG -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23019833'/%3E%3Cpath d='M7 6h6l6 14-3 6-9-20z' fill='%23ffffff'/%3E%3Cpath d='M19 6h6l-9 20-3-6 6-14z' fill='%2390ef90'/%3E%3Ctext x='16' y='28' font-size='8' font-family='monospace' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3EVIM%3C/text%3E%3C/svg%3E">
+</head>
+<body data-theme="gruvbox">
+  <!-- CRT Screen Overlay Effect -->
+  <div id="crt-overlay" class="crt-overlay hidden"></div>
+
+  <!-- App Wrapper -->
+  <div class="app-container">
+    <!-- Top System Bar / SRE Header -->
+    <header class="top-nav-bar" id="top-nav-bar">
+      <div class="nav-left">
+        <div class="traffic-lights">
+          <button class="traffic-btn btn-close" id="btn-reboot" title="Reboot System"></button>
+          <button class="traffic-btn btn-minimize" id="btn-clear" title="Clear Screen"></button>
+          <button class="traffic-btn btn-maximize" id="btn-fullscreen" title="Toggle Fullscreen"></button>
+        </div>
+        <div class="system-brand">
+          <span class="vim-logo-badge">VIM</span>
+          <span class="system-hostname" id="sys-hostname">root@sre-node-01: ~</span>
+          <span class="active-app-badge" id="active-app-indicator">BOOT</span>
+        </div>
+      </div>
+
+      <div class="nav-center">
+        <div class="quick-status-group">
+          <span class="status-item" id="cpu-stat"><span class="stat-label">CPU:</span> <span class="stat-val" id="cpu-val">2.4%</span></span>
+          <span class="status-item" id="mem-stat"><span class="stat-label">RAM:</span> <span class="stat-val" id="mem-val">412M / 4096M</span></span>
+          <span class="status-item" id="fs-stat"><span class="stat-label">VFS:</span> <span class="stat-val" id="vfs-file-count">12 files</span></span>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <!-- Quick Action Buttons -->
+        <button class="nav-btn" id="btn-quick-new" title="New file in Vim (vim untitled.txt)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>New File</span>
+        </button>
+
+        <button class="nav-btn" id="btn-quick-download" title="Download Active / Selected File">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <span>Download</span>
+        </button>
+
+        <button class="nav-btn" id="btn-export-zip" title="Export entire Virtual Filesystem as JSON/Archive">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <span>Export VFS</span>
+        </button>
+
+        <button class="nav-btn" id="btn-upload-file" title="Upload local file to virtual filesystem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          <span>Upload</span>
+        </button>
+        <input type="file" id="file-uploader-input" multiple style="display:none">
+
+        <!-- Theme Picker Dropdown -->
+        <div class="dropdown-wrapper">
+          <button class="nav-btn dropdown-toggle" id="btn-theme-picker" title="Switch Theme">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <span id="current-theme-label">Gruvbox</span>
+          </button>
+          <div class="dropdown-menu" id="theme-menu">
+            <button class="dropdown-item active" data-set-theme="gruvbox">Gruvbox Dark</button>
+            <button class="dropdown-item" data-set-theme="monokai">Monokai Pro</button>
+            <button class="dropdown-item" data-set-theme="nord">Nord Arctic</button>
+            <button class="dropdown-item" data-set-theme="dracula">Dracula</button>
+            <button class="dropdown-item" data-set-theme="tokyonight">Tokyo Night</button>
+            <button class="dropdown-item" data-set-theme="onedark">One Dark</button>
+            <button class="dropdown-item" data-set-theme="solarized">Solarized Dark</button>
+            <button class="dropdown-item" data-set-theme="retro-green">Retro Green CRT</button>
+            <button class="dropdown-item" data-set-theme="retro-amber">Retro Amber CRT</button>
+          </div>
+        </div>
+
+        <!-- Audio toggle -->
+        <button class="nav-icon-btn" id="btn-toggle-sound" title="Toggle Mechanical Keyboard & System Sounds">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="sound-icon-on"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="sound-icon-off" class="hidden"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+        </button>
+
+        <!-- CRT Scanline toggle -->
+        <button class="nav-icon-btn" id="btn-toggle-crt" title="Toggle Retro CRT Scanlines">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </button>
+
+        <!-- Help Modal Trigger -->
+        <button class="nav-btn nav-btn-primary" id="btn-help-modal" title="Vim & Terminal Shortcuts Cheatsheet (F1 / :help)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+          <span>Vim Guide</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="main-terminal-area" id="main-viewport">
+      <!-- 1. Boot Simulation Screen View -->
+      <section class="screen-layer boot-screen" id="boot-screen">
+        <div class="boot-header-banner">
+          <pre class="boot-ascii-logo">
+  ____    ____  ______  ___      ___          __    __  ___________  ___   ___  ___       
+  \   \  /   / |      ||   \    /   |        |  |  |  ||           ||   \ /   ||   |      
+   \   \/   /  |  |--  |    \  /    |  ____  |  |--|  |`---|  |----`|    V    ||   |      
+    \      /   |  |    |  |\ \/ /|  | |____| |   __   |    |  |     |  |\ /|  ||   |      
+     \    /    |  |--  |  | \__/ |  |        |  |  |  |    |  |     |  | V |  ||   |----. 
+      \__/     |______||__|      |__|        |__|  |__|    |__|     |__|   |__||________| 
+          </pre>
+          <div class="boot-subhead">Linux Kernel 6.12.8-sre-generic (x86_64) — System Bootstrap v2.4</div>
+          <div class="boot-skip-hint">Press <kbd>Space</kbd>, <kbd>Enter</kbd> or <kbd>Esc</kbd> to skip boot sequence</div>
+        </div>
+        <div class="boot-log-container" id="boot-log-container">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- 2. Linux Terminal View -->
+      <section class="screen-layer terminal-screen hidden" id="terminal-screen">
+        <div class="terminal-output" id="terminal-output" role="log" aria-live="polite">
+          <!-- Terminal logs, command outputs, banner -->
+        </div>
+        
+        <!-- Live Terminal Input Line -->
+        <div class="terminal-prompt-row" id="terminal-prompt-row">
+          <span class="prompt-user" id="terminal-prompt-user">user@sre-node-01</span><span class="prompt-separator">:</span><span class="prompt-path" id="terminal-prompt-path">~</span><span class="prompt-symbol">$</span>
+          <div class="terminal-input-wrapper">
+            <input type="text" id="terminal-cmd-input" class="terminal-cmd-input" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" aria-label="Terminal Command Input">
+            <span class="terminal-cursor" id="terminal-cursor"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Authentic Vim Replica View -->
+      <section class="screen-layer vim-screen hidden" id="vim-screen" tabindex="0" aria-label="Vim Editor">
+        <div class="vim-viewport" id="vim-viewport">
+          <!-- Main Buffer Area with Line Numbers & Code Canvas -->
+          <div class="vim-body" id="vim-body">
+            <div class="vim-gutter" id="vim-gutter" aria-hidden="true">
+              <!-- Line numbers rendered here -->
+            </div>
+            <div class="vim-content-area" id="vim-content-area">
+              <div class="vim-lines-container" id="vim-lines-container">
+                <!-- Lines of buffer rendered here with syntax spans -->
+              </div>
+              <div class="vim-cursor-block" id="vim-cursor-block"></div>
+            </div>
+          </div>
+
+          <!-- Vim Bottom Status Bar (Powerline-style) -->
+          <footer class="vim-statusline" id="vim-statusline">
+            <div class="vim-status-left">
+              <span class="vim-mode-tag" id="vim-mode-tag">NORMAL</span>
+              <span class="vim-file-info" id="vim-file-info">untitled.txt</span>
+              <span class="vim-dirty-flag" id="vim-dirty-flag"></span>
+            </div>
+            <div class="vim-status-right">
+              <span class="vim-encoding-tag">utf-8</span>
+              <span class="vim-filetype-tag" id="vim-filetype-tag">text</span>
+              <span class="vim-percent-tag" id="vim-percent-tag">Top</span>
+              <span class="vim-position-tag" id="vim-position-tag">1,1</span>
+            </div>
+          </footer>
+
+          <!-- Vim Command / Echo Line (The 24th / last line in classic terminal vim) -->
+          <div class="vim-commandline" id="vim-commandline">
+            <div class="vim-cmd-prefix" id="vim-cmd-prefix"></div>
+            <div class="vim-cmd-text" id="vim-cmd-text"></div>
+            <div class="vim-cmd-cursor" id="vim-cmd-cursor"></div>
+            <div class="vim-msg-display" id="vim-msg-display"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Quick Bar -->
+    <footer class="bottom-dock-bar">
+      <div class="dock-left">
+        <span class="kbd-helper-pill"><kbd>i</kbd> Insert</span>
+        <span class="kbd-helper-pill"><kbd>Esc</kbd> Normal</span>
+        <span class="kbd-helper-pill"><kbd>:w</kbd> Save</span>
+        <span class="kbd-helper-pill"><kbd>:q</kbd> Exit</span>
+        <span class="kbd-helper-pill"><kbd>:wq</kbd> Save & Exit</span>
+        <span class="kbd-helper-pill"><kbd>:download</kbd> Download</span>
+        <span class="kbd-helper-pill"><kbd>u</kbd> / <kbd>Ctrl+r</kbd> Undo/Redo</span>
+        <span class="kbd-helper-pill"><kbd>/</kbd> Search</span>
+      </div>
+      <div class="dock-right">
+        <span class="dock-brand">vim-html SRE Workstation v1.0.0</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Help & Shortcuts Modal -->
+  <div class="modal-overlay hidden" id="help-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="vim-logo-badge">VIM</span>
+          <h2>Vim & Linux Shell Quick Reference</h2>
+        </div>
+        <button class="modal-close-btn" id="btn-close-modal">&times;</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="tab-vim-normal">Normal Mode</button>
+        <button class="modal-tab" data-tab="tab-vim-insert">Insert & Visual</button>
+        <button class="modal-tab" data-tab="tab-vim-commands">Command-Line (:)</button>
+        <button class="modal-tab" data-tab="tab-terminal-cmds">Terminal Commands</button>
+        <button class="modal-tab" data-tab="tab-sre-features">SRE Features & Download</button>
+      </div>
+
+      <div class="modal-content-body">
+        <!-- Tab 1: Normal Mode -->
+        <div class="tab-pane active" id="tab-vim-normal">
+          <div class="cheatsheet-grid">
+            <div class="cheat-card">
+              <h3>Navigation</h3>
+              <ul>
+                <li><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd> — Left, Down, Up, Right</li>
+                <li><kbd>w</kbd> / <kbd>b</kbd> — Jump word forward / backward</li>
+                <li><kbd>e</kbd> / <kbd>ge</kbd> — Jump to end of word forward / backward</li>
+                <li><kbd>0</kbd> / <kbd>$</kbd> — Jump to start / end of line</li>
+                <li><kbd>^</kbd> — Jump to first non-blank character</li>
+                <li><kbd>gg</kbd> / <kbd>G</kbd> — Go to first / last line</li>
+                <li><kbd>&lt;N&gt;G</kbd> / <kbd>&lt;N&gt;gg</kbd> — Jump to line N (e.g. <code>42G</code>)</li>
+                <li><kbd>{</kbd> / <kbd>}</kbd> — Jump paragraph backward / forward</li>
+                <li><kbd>Ctrl+d</kbd> / <kbd>Ctrl+u</kbd> — Half-page scroll down / up</li>
+                <li><kbd>Ctrl+f</kbd> / <kbd>Ctrl+b</kbd> — Full-page scroll down / up</li>
+                <li><kbd>%</kbd> — Jump to matching bracket <code>()</code>, <code>{}</code>, <code>[]</code></li>
+              </ul>
+            </div>
+            <div class="cheat-card">
+              <h3>Editing & Operators</h3>
+              <ul>
+                <li><kbd>x</kbd> / <kbd>X</kbd> — Delete char under / before cursor</li>
+                <li><kbd>r&lt;char&gt;</kbd> — Replace single character under cursor</li>
+                <li><kbd>dd</kbd> / <kbd>&lt;N&gt;dd</kbd> — Delete (cut) line / N lines</li>
+                <li><kbd>dw</kbd> / <kbd>de</kbd> / <kbd>d$</kbd> / <kbd>d0</kbd> — Delete word / to end / to start</li>
+                <li><kbd>yy</kbd> / <kbd>&lt;N&gt;yy</kbd> — Yank (copy) line / N lines</li>
+                <li><kbd>yw</kbd> / <kbd>y$</kbd> — Yank word / to end of line</li>
+                <li><kbd>p</kbd> / <kbd>P</kbd> — Paste after / before cursor</li>
+                <li><kbd>u</kbd> — Undo last change</li>
+                <li><kbd>Ctrl+r</kbd> — Redo last undone change</li>
+                <li><kbd>.</kbd> — Repeat last edit action</li>
+                <li><kbd>J</kbd> — Join current line with next line</li>
+                <li><kbd>&gt;&gt;</kbd> / <kbd>&lt;&lt;</kbd> — Indent / unindent line</li>
+                <li><kbd>~</kbd> — Switch character case (upper/lower)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Insert & Visual -->
+        <div class="tab-pane" id="tab-vim-insert">
+          <div class="cheatsheet-grid">
+            <div class="cheat-card">
+              <h3>Entering Insert Mode</h3>
+              <ul>
+                <li><kbd>i</kbd> — Insert before cursor</li>
+                <li><kbd>I</kbd> — Insert at beginning of line</li>
+                <li><kbd>a</kbd> — Append after cursor</li>
+                <li><kbd>A</kbd> — Append at end of line</li>
+                <li><kbd>o</kbd> — Open new line below and insert</li>
+                <li><kbd>O</kbd> — Open new line above and insert</li>
+                <li><kbd>s</kbd> — Delete char and enter insert mode</li>
+                <li><kbd>S</kbd> / <kbd>cc</kbd> — Clear entire line and insert</li>
+                <li><kbd>cw</kbd> / <kbd>ciw</kbd> — Change word / change inside word</li>
+                <li><kbd>C</kbd> — Change to end of line</li>
+                <li><kbd>R</kbd> — Enter Replace mode</li>
+                <li><kbd>Esc</kbd> / <kbd>Ctrl+[</kbd> — Return to Normal mode</li>
+              </ul>
+            </div>
+            <div class="cheat-card">
+              <h3>Visual Mode (<kbd>v</kbd> / <kbd>V</kbd>)</h3>
+              <ul>
+                <li><kbd>v</kbd> — Start character-wise visual selection</li>
+                <li><kbd>V</kbd> — Start line-wise visual selection</li>
+                <li><kbd>d</kbd> / <kbd>x</kbd> — Cut selected text</li>
+                <li><kbd>y</kbd> — Yank (copy) selected text</li>
+                <li><kbd>c</kbd> — Change selected text (delete & insert)</li>
+                <li><kbd>&gt;</kbd> / <kbd>&lt;</kbd> — Indent / unindent selected block</li>
+                <li><kbd>u</kbd> / <kbd>U</kbd> — Convert selection to lowercase / UPPERCASE</li>
+                <li><kbd>~</kbd> — Toggle case of selection</li>
+                <li><kbd>Esc</kbd> — Exit visual mode back to normal</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Command-Line Mode -->
+        <div class="tab-pane" id="tab-vim-commands">
+          <div class="cheatsheet-grid">
+            <div class="cheat-card">
+              <h3>Saving, Exiting & Downloading</h3>
+              <ul>
+                <li><code>:w</code> — Save current buffer to virtual filesystem</li>
+                <li><code>:w &lt;filename&gt;</code> — Save as specific filename</li>
+                <li><code>:q</code> — Quit buffer (warns if unsaved changes)</li>
+                <li><code>:q!</code> — Force quit buffer without saving</li>
+                <li><code>:wq</code> / <code>:x</code> / <code>ZZ</code> — Save and quit</li>
+                <li><code>:download</code> or <code>:export</code> — <strong>Download current file directly to your computer</strong></li>
+                <li><code>:w !download</code> — Vim-style download pipeline</li>
+                <li><code>:r &lt;file&gt;</code> — Read contents of another file into buffer</li>
+              </ul>
+            </div>
+            <div class="cheat-card">
+              <h3>Search, Substitute & Options</h3>
+              <ul>
+                <li><code>/pattern</code> — Search forward for text / regex</li>
+                <li><code>?pattern</code> — Search backward</li>
+                <li><kbd>n</kbd> / <kbd>N</kbd> — Next / previous search match</li>
+                <li><code>:noh</code> — Clear search highlighting</li>
+                <li><code>:%s/foo/bar/g</code> — Replace all instances of <code>foo</code> with <code>bar</code></li>
+                <li><code>:s/foo/bar/g</code> — Replace in current line only</li>
+                <li><code>:&lt;number&gt;</code> — Jump to line number (e.g. <code>:25</code>)</li>
+                <li><code>:set nu</code> / <code>:set nonu</code> — Toggle line numbers</li>
+                <li><code>:set rnu</code> / <code>:set nornu</code> — Toggle relative line numbers</li>
+                <li><code>:set wrap</code> / <code>:set nowrap</code> — Toggle line wrap</li>
+                <li><code>:! &lt;command&gt;</code> — Execute terminal command (e.g. <code>:!ls</code>)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Terminal Commands -->
+        <div class="tab-pane" id="tab-terminal-cmds">
+          <div class="cheatsheet-grid">
+            <div class="cheat-card">
+              <h3>File & Directory Management</h3>
+              <ul>
+                <li><code>vim &lt;file&gt;</code> / <code>vi &lt;file&gt;</code> — Open or create file in Vim</li>
+                <li><code>ls</code> / <code>ls -la</code> / <code>ls -l</code> — List files with metadata/hidden</li>
+                <li><code>tree</code> — Display directory tree hierarchy</li>
+                <li><code>cd &lt;dir&gt;</code> / <code>cd ..</code> / <code>cd ~</code> — Change directory</li>
+                <li><code>pwd</code> — Print current working directory</li>
+                <li><code>mkdir &lt;dir&gt;</code> / <code>mkdir -p</code> — Create directory</li>
+                <li><code>touch &lt;file&gt;</code> — Create empty file or update timestamp</li>
+                <li><code>cat &lt;file&gt;</code> — Display file content</li>
+                <li><code>rm &lt;file&gt;</code> / <code>rm -r &lt;dir&gt;</code> — Remove file or directory</li>
+                <li><code>cp &lt;src&gt; &lt;dst&gt;</code> — Copy file</li>
+                <li><code>mv &lt;src&gt; &lt;dst&gt;</code> — Move or rename file</li>
+              </ul>
+            </div>
+            <div class="cheat-card">
+              <h3>Pipes, Redirection & Utilities</h3>
+              <ul>
+                <li><code>echo "text" &gt; file.txt</code> — Write text to file</li>
+                <li><code>echo "text" &gt;&gt; file.txt</code> — Append text to file</li>
+                <li><code>grep &lt;keyword&gt; &lt;file&gt;</code> — Search for pattern</li>
+                <li><code>download &lt;file&gt;</code> — Download file to local machine</li>
+                <li><code>clear</code> / <kbd>Ctrl+L</kbd> — Clear terminal output</li>
+                <li><code>history</code> — Display recent command history</li>
+                <li><code>whoami</code> / <code>uname -a</code> / <code>date</code> / <code>uptime</code></li>
+                <li><code>top</code> / <code>htop</code> / <code>ps aux</code> — View system processes</li>
+                <li><code>df -h</code> / <code>free -m</code> — View storage and memory</li>
+                <li><code>dmesg</code> / <code>journalctl</code> — View kernel & system logs</li>
+                <li><code>reboot</code> — Restart Linux boot simulation</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 5: SRE Features & Downloads -->
+        <div class="tab-pane" id="tab-sre-features">
+          <div class="cheat-card">
+            <h3>SRE Tools & Workflow Integration</h3>
+            <p><strong>vim-html</strong> comes loaded with sample DevOps / SRE configs in <code>/home/user</code>:</p>
+            <ul style="margin-top: 10px;">
+              <li><code>incident_report.md</code> — Production outage post-mortem template</li>
+              <li><code>k8s_deployment.yaml</code> — Kubernetes Deployment & Service manifest</li>
+              <li><code>backup_database.sh</code> — PostgreSQL S3 backup automation script</li>
+              <li><code>server.py</code> — Python FastAPI microservice template</li>
+              <li><code>nginx.conf</code> — High performance reverse proxy configuration</li>
+            </ul>
+            <h3 style="margin-top: 18px;">How to Download Files</h3>
+            <ol style="margin-left: 20px; margin-top: 8px; line-height: 1.8;">
+              <li><strong>Inside Vim</strong>: Type <code>:download</code> or <code>:export</code> or <code>:w !download</code> and press <kbd>Enter</kbd>.</li>
+              <li><strong>In Terminal</strong>: Run <code>download &lt;filename&gt;</code> (e.g. <code>download server.py</code>).</li>
+              <li><strong>Top Navigation Bar</strong>: Click the <strong>Download</strong> button anytime while editing a file, or click <strong>Export VFS</strong> to download your entire filesystem state as a JSON backup.</li>
+              <li><strong>Upload Files</strong>: Drag & drop files onto the browser window or click <strong>Upload</strong> in the top bar to place them right into your current virtual directory!</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="modal-footer-hint">Tip: Press <kbd>Tab</kbd> in terminal for command and filename autocomplete.</span>
+        <button class="nav-btn nav-btn-primary" id="btn-modal-got-it">Got it (Esc)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Application Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/fs.js"></script>
+  <script src="js/boot.js"></script>
+  <script src="js/vim.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

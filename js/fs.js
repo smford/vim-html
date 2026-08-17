@@ -68,9 +68,14 @@ class VirtualFS {
 Try editing sample files in /home/user with vim now!
 `);
 
-    // 2. SRE Incident Report Template
+    // 2. SRE Incident Report Template with GFM alerts and SVG image
     this.writeFile('/home/user/incident_report.md',
 `# Post-Mortem Incident Report: INC-2026-0817-A
+
+![Cluster Status Badge](https://img.shields.io/badge/Cluster_Status-Mitigated-brightgreen.svg) ![Severity](https://img.shields.io/badge/Severity-P1_Critical-red.svg)
+
+> [!IMPORTANT]
+> All primary user sessions have been re-routed through availability zone \`eu-west-1b\`.
 
 **Status**: Resolved  
 **Severity**: P1 - Critical  
@@ -83,19 +88,70 @@ Try editing sample files in /home/user with vim now!
 ## 1. Executive Summary
 Between 19:42 and 20:05 UTC, our European edge gateway experienced a 74% increase in 504 Gateway Timeouts. The root cause was identified as an unindexed query on the \`user_sessions\` table triggered by a scheduled cron migration.
 
-## 2. Timeline (all times in UTC)
+## 2. Infrastructure Topology
+![Production System Architecture](architecture.svg)
+
+## 3. Timeline (all times in UTC)
 - **19:42**: Datadog latency monitor triggered alert \`ALERT_GATEWAY_P99_SPIKE\`.
 - **19:45**: On-call engineer acknowledged incident and initiated war room.
 - **19:50**: Traffic shifted to secondary availability zone (eu-west-1b).
 - **19:58**: Postgres connection pool saturation mitigated via \`pgbouncer\` restart.
 - **20:05**: Hotfix patch applied; response latency normalized to 32ms.
 
-## 3. Action Items
+## 4. Action Items
 - [x] Add composite index on \`user_sessions(account_id, expires_at)\`
 - [ ] Implement query timeout caps on all migration batch runs
 - [ ] Upgrade RDS Postgres instance class to \`db.r6g.4xlarge\`
 - [ ] Review auto-scaling cooldown intervals in Terraform manifest
 `);
+
+    // 2.1 Architecture SVG Diagram
+    this.writeFile('/home/user/architecture.svg',
+`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 240" width="100%" height="240" style="background:#1d2021; font-family:'Fira Code', monospace; border-radius:8px;">
+  <defs>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b8bb26"/>
+      <stop offset="100%" stop-color="#8ec07c"/>
+    </linearGradient>
+    <linearGradient id="alertGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb4934"/>
+      <stop offset="100%" stop-color="#fabd2f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <text x="20" y="30" fill="#ebdbb2" font-size="14" font-weight="bold">PROD-EU-WEST-1 CLUSTER TOPOLOGY</text>
+
+  <!-- Gateway Box -->
+  <rect x="30" y="70" width="140" height="110" rx="6" fill="#282828" stroke="#8ec07c" stroke-width="2"/>
+  <text x="45" y="100" fill="#8ec07c" font-size="12" font-weight="bold">Edge Ingress</text>
+  <text x="45" y="125" fill="#a89984" font-size="10">NGINX Gateway</text>
+  <text x="45" y="145" fill="#fabd2f" font-size="10">Ports: 80, 443</text>
+  <circle cx="150" cy="85" r="5" fill="#b8bb26"/>
+
+  <!-- Arrow 1 -->
+  <line x1="170" y1="125" x2="250" y2="125" stroke="#ebdbb2" stroke-width="2" stroke-dasharray="4"/>
+  <polygon points="250,120 260,125 250,130" fill="#ebdbb2"/>
+
+  <!-- App Cluster Box -->
+  <rect x="260" y="55" width="170" height="140" rx="6" fill="#282828" stroke="#83a598" stroke-width="2"/>
+  <text x="275" y="85" fill="#83a598" font-size="12" font-weight="bold">K8s Core Services</text>
+  <text x="275" y="110" fill="#ebdbb2" font-size="10">• auth-service (x3)</text>
+  <text x="275" y="130" fill="#ebdbb2" font-size="10">• api-backend (x5)</text>
+  <text x="275" y="150" fill="#ebdbb2" font-size="10">• otel-collector</text>
+  <text x="275" y="175" fill="#b8bb26" font-size="9">✓ Latency: 32ms</text>
+
+  <!-- Arrow 2 -->
+  <line x1="430" y1="125" x2="500" y2="125" stroke="#ebdbb2" stroke-width="2" stroke-dasharray="4"/>
+  <polygon points="500,120 510,125 500,130" fill="#ebdbb2"/>
+
+  <!-- Database Box -->
+  <rect x="510" y="70" width="160" height="110" rx="6" fill="#282828" stroke="#d3869b" stroke-width="2"/>
+  <text x="525" y="100" fill="#d3869b" font-size="12" font-weight="bold">Data Layer</text>
+  <text x="525" y="125" fill="#a89984" font-size="10">PgBouncer Pooler</text>
+  <text x="525" y="145" fill="#a89984" font-size="10">PostgreSQL 16 (Primary)</text>
+  <circle cx="650" cy="85" r="5" fill="#b8bb26"/>
+</svg>`);
 
     // 3. Kubernetes Manifest
     this.writeFile('/home/user/k8s_deployment.yaml',

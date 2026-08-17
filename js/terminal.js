@@ -493,7 +493,10 @@ class TerminalShell {
 
   cmdCat(args) {
     if (args.length === 0) return 'cat: missing file operand';
-    const target = args[0];
+    const isRaw = args.includes('--raw');
+    const target = args.find(a => !a.startsWith('-'));
+    if (!target) return 'cat: missing file operand';
+
     const resolved = window.vfs.resolve(this.cwd, target);
 
     if (!window.vfs.exists(resolved)) {
@@ -503,8 +506,358 @@ class TerminalShell {
       return `<span style="color:var(--accent-danger)">cat: ${this.escapeHtml(target)}: Is a directory</span>`;
     }
 
-    const content = window.vfs.readFile(resolved);
-    return this.escapeHtml(content || '');
+    const content = window.vfs.readFile(resolved) || '';
+    const isMarkdown = target.toLowerCase().endsWith('.md') || target.toLowerCase().endsWith('.markdown');
+
+    if (isMarkdown && !isRaw) {
+      return this.renderMarkdown(content, target);
+    }
+
+    return this.escapeHtml(content);
+  }
+
+  renderMarkdown(mdText, fileName = '') {
+    if (!mdText || !mdText.trim()) return '<div class="term-markdown-container"><em>(Empty document)</em></div>';
+
+    const docDir = fileName ? (fileName.includes('/') ? fileName.split('/').slice(0, -1).join('/') || '/home/user' : this.cwd) : this.cwd;
+    const lines = mdText.split('\n');
+    let html = `<div class="term-markdown-container">`;
+    
+    if (fileName) {
+      const fn = fileName.split('/').pop();
+      html += `
+        <div class="term-md-header">
+          <span><strong>📄 GFM Document Viewer:</strong> ${this.escapeHtml(fn)}</span>
+          <span class="term-md-badge">Markdown</span>
+        </div>
+      `;
+    }
+
+    let inCodeBlock = false;
+    let codeLanguage = '';
+    let codeContent = [];
+    let inTable = false;
+    let tableRows = [];
+    let inAlert = false;
+    let alertType = '';
+    let alertLines = [];
+    let inList = false;
+    let listType = 'ul';
+
+    const flushList = () => {
+      if (inList) {
+        html += `</${listType}>`;
+        inList = false;
+      }
+    };
+
+    const flushAlert = () => {
+      if (inAlert) {
+        const titleMap = {
+          'note': 'Note',
+          'tip': 'Tip',
+          'important': 'Important',
+          'warning': 'Warning',
+          'caution': 'Caution'
+        };
+        const title = titleMap[alertType] || 'Note';
+        html += `
+          <div class="term-md-alert term-md-alert-${alertType}">
+            <div class="term-md-alert-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>${title}</span>
+            </div>
+            <div>${alertLines.map(l => this.formatInlineMarkdown(l, docDir)).join('<br>')}</div>
+          </div>
+        `;
+        inAlert = false;
+        alertType = '';
+        alertLines = [];
+      }
+    };
+
+    const flushTable = () => {
+      if (inTable && tableRows.length > 0) {
+        html += '<table class="term-md-table">';
+        const [headers, ...data] = tableRows;
+        html += '<thead><tr>';
+        headers.forEach(h => {
+          html += `<th>${this.formatInlineMarkdown(h.trim(), docDir)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        data.forEach(row => {
+          html += '<tr>';
+          row.forEach(cell => {
+            html += `<td>${this.formatInlineMarkdown(cell.trim(), docDir)}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        inTable = false;
+        tableRows = [];
+      }
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Code blocks
+      if (line.trim().startsWith('```')) {
+        if (inCodeBlock) {
+          // Flush code block
+          let highlightedCode = '';
+          const lang = codeLanguage.toLowerCase();
+          for (const cLine of codeContent) {
+            if (window.vimApp && window.vimApp.highlightLine) {
+              highlightedCode += window.vimApp.highlightLine(cLine, lang) + '\n';
+            } else {
+              highlightedCode += this.escapeHtml(cLine) + '\n';
+            }
+          }
+          html += `
+            <div class="term-md-code-block">
+              <div class="term-md-code-header">
+                <span>${codeLanguage ? this.escapeHtml(codeLanguage) : 'code'}</span>
+                <span>Language</span>
+              </div>
+              <div class="term-md-code-body">${highlightedCode}</div>
+            </div>
+          `;
+          inCodeBlock = false;
+          codeLanguage = '';
+          codeContent = [];
+        } else {
+          flushList();
+          flushAlert();
+          flushTable();
+          inCodeBlock = true;
+          codeLanguage = line.trim().slice(3).trim();
+          codeContent = [];
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeContent.push(line);
+        continue;
+      }
+
+      // GitHub Alerts: > [!NOTE], > [!TIP], > [!IMPORTANT], > [!WARNING], > [!CAUTION]
+      const alertMatch = line.trim().match(/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
+      if (alertMatch) {
+        flushList();
+        flushTable();
+        flushAlert();
+        inAlert = true;
+        alertType = alertMatch[1].toLowerCase();
+        alertLines = [];
+        continue;
+      }
+
+      if (inAlert) {
+        if (line.trim().startsWith('>')) {
+          alertLines.push(line.replace(/^>\s?/, ''));
+          continue;
+        } else if (line.trim() !== '') {
+          alertLines.push(line);
+          continue;
+        } else {
+          flushAlert();
+          continue;
+        }
+      }
+
+      // Standard Blockquote: > text
+      if (line.trim().startsWith('>')) {
+        flushList();
+        flushTable();
+        const quoteText = line.replace(/^>\s?/, '');
+        html += `<blockquote>${this.formatInlineMarkdown(quoteText, docDir)}</blockquote>`;
+        continue;
+      }
+
+      // Tables: | col1 | col2 |
+      if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+        flushList();
+        const cells = line.trim().slice(1, -1).split('|');
+        // Check if separator row (| --- | --- |)
+        if (cells.every(c => /^[\s:-]+$/.test(c))) {
+          continue;
+        }
+        if (!inTable) {
+          inTable = true;
+          tableRows = [];
+        }
+        tableRows.push(cells);
+        continue;
+      } else {
+        flushTable();
+      }
+
+      // Horizontal Rules: ---, ***, ___
+      if (/^(\s*[-*_]\s*){3,}$/.test(line.trim())) {
+        flushList();
+        html += '<hr>';
+        continue;
+      }
+
+      // Headings: # H1, ## H2, etc.
+      const headMatch = line.match(/^(#{1,6})\s+(.*)$/);
+      if (headMatch) {
+        flushList();
+        const level = headMatch[1].length;
+        const headText = headMatch[2];
+        html += `<h${level}>${this.formatInlineMarkdown(headText, docDir)}</h${level}>`;
+        continue;
+      }
+
+      // Task list item: - [ ] or - [x]
+      const taskMatch = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
+      if (taskMatch) {
+        flushTable();
+        if (!inList || listType !== 'ul') {
+          flushList();
+          inList = true;
+          listType = 'ul';
+          html += '<ul>';
+        }
+        const isChecked = taskMatch[2].toLowerCase() === 'x';
+        const taskText = taskMatch[3];
+        html += `
+          <li class="term-md-task-item">
+            <span class="term-md-checkbox ${isChecked ? 'checked' : ''}">${isChecked ? '✓' : ''}</span>
+            <span>${this.formatInlineMarkdown(taskText, docDir)}</span>
+          </li>
+        `;
+        continue;
+      }
+
+      // Unordered Lists: - item, * item, + item
+      const ulMatch = line.match(/^(\s*)[-*+]\s+(.*)$/);
+      if (ulMatch) {
+        flushTable();
+        if (!inList || listType !== 'ul') {
+          flushList();
+          inList = true;
+          listType = 'ul';
+          html += '<ul>';
+        }
+        html += `<li>${this.formatInlineMarkdown(ulMatch[2], docDir)}</li>`;
+        continue;
+      }
+
+      // Ordered Lists: 1. item
+      const olMatch = line.match(/^(\s*)\d+\.\s+(.*)$/);
+      if (olMatch) {
+        flushTable();
+        if (!inList || listType !== 'ol') {
+          flushList();
+          inList = true;
+          listType = 'ol';
+          html += '<ol>';
+        }
+        html += `<li>${this.formatInlineMarkdown(olMatch[2], docDir)}</li>`;
+        continue;
+      }
+
+      // Blank line
+      if (line.trim() === '') {
+        flushList();
+        continue;
+      }
+
+      // Regular Paragraph
+      flushList();
+      html += `<p>${this.formatInlineMarkdown(line, docDir)}</p>`;
+    }
+
+    flushList();
+    flushAlert();
+    flushTable();
+
+    html += `</div>`;
+    return html;
+  }
+
+  formatInlineMarkdown(str, docDir = this.cwd) {
+    if (!str) return '';
+
+    // 1. Process Images FIRST using tokenization to avoid link interference
+    const imageTokens = [];
+    let text = str.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]+)")?\)/g, (match, alt, src, title) => {
+      const token = `@@VIMIMGTOKEN${imageTokens.length}@@`;
+      let resolvedSrc = (src || '').trim();
+      const altText = alt || title || 'Image';
+      let imgHtml = '';
+
+      // External web URL or Data/Blob URI
+      if (resolvedSrc.startsWith('http://') || resolvedSrc.startsWith('https://') || resolvedSrc.startsWith('data:') || resolvedSrc.startsWith('blob:')) {
+        imgHtml = `
+          <div class="term-md-img-container">
+            <img src="${resolvedSrc}" alt="${this.escapeHtml(altText)}" class="term-md-img" loading="lazy" onerror="this.parentElement.innerHTML='<span class=\\'term-md-img-broken\\'>🖼️ [Image: ${this.escapeHtml(altText)} - Failed to load]</span>'">
+            ${altText ? `<span class="term-md-img-caption">${this.escapeHtml(altText)}</span>` : ''}
+          </div>
+        `;
+      } else {
+        // Local Virtual Filesystem path
+        const vfsPath = window.vfs.resolve(docDir || this.cwd, resolvedSrc);
+        const vfsContent = window.vfs.readFile(vfsPath);
+
+        if (vfsContent !== null) {
+          let dataUri = '';
+          if (vfsPath.toLowerCase().endsWith('.svg') || vfsContent.trim().startsWith('<svg')) {
+            dataUri = `data:image/svg+xml;utf8,${encodeURIComponent(vfsContent)}`;
+          } else if (vfsContent.startsWith('data:image/')) {
+            dataUri = vfsContent;
+          } else {
+            dataUri = `data:image/svg+xml;utf8,${encodeURIComponent(vfsContent)}`;
+          }
+
+          imgHtml = `
+            <div class="term-md-img-container">
+              <img src="${dataUri}" alt="${this.escapeHtml(altText)}" class="term-md-img" loading="lazy">
+              ${altText ? `<span class="term-md-img-caption">${this.escapeHtml(altText)}</span>` : ''}
+            </div>
+          `;
+        } else {
+          imgHtml = `
+            <div class="term-md-img-container">
+              <span class="term-md-img-broken">🖼️ [Image: ${this.escapeHtml(altText)} (${this.escapeHtml(resolvedSrc)}) — File not found in VFS]</span>
+            </div>
+          `;
+        }
+      }
+
+      imageTokens.push(imgHtml);
+      return token;
+    });
+
+    // 2. Escape HTML on remaining text
+    let escaped = this.escapeHtml(text);
+
+    // 3. Inline code `code`
+    escaped = escaped.replace(/`([^`]+)`/g, '<code class="term-md-inline-code">$1</code>');
+
+    // 4. Bold **text** or __text__
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    escaped = escaped.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+    // 5. Italic *text* or _text_
+    escaped = escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    escaped = escaped.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+    // 6. Strikethrough ~~text~~
+    escaped = escaped.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+    // 7. Links [text](url)
+    escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="term-md-link">$1</a>');
+
+    // 8. Restore image tokens safely using callback
+    for (let i = 0; i < imageTokens.length; i++) {
+      escaped = escaped.replace(new RegExp(`@@VIMIMGTOKEN${i}@@`, 'g'), () => imageTokens[i]);
+    }
+
+    return escaped;
   }
 
   cmdRm(args) {

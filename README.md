@@ -11,7 +11,7 @@
 ### 1. 🖥️ Simulated Linux Boot & SRE Terminal Shell
 - **Kernel Boot Sequence**: Realistic `dmesg` logs with microsecond precision, CPU/RAM detection, PCI/VirtIO bus discovery, and systemd target activations (`[ OK ] Started ...`). Press `Space`, `Enter`, or `Esc` to skip instantly.
 - **Hierarchical Virtual In-Memory Filesystem (VFS)**: Complete `/`, `/home/user`, `/etc`, `/var/log`, `/proc`, and `/tmp` filesystem layout.
-- **Shell Commands**: `ls` (with `-l`, `-a`, `-la` and colorized file types), `cd`, `pwd`, `mkdir -p`, `touch`, `cat`, `rm -r`, `cp`, `mv`, `echo` (with `>` and `>>` redirection), `clear`, `grep`, `top` / `htop` (live CPU/RAM bars and process lists), `ps aux`, `df -h`, `free -m`, `dmesg`, `whoami`, `uname -a`, `uptime`, `date`, `history`, `tree`, `download`, `upload`, `theme`, and `reboot`.
+- **Shell Commands**: `vim <file>`, `curl` (with `-o`, `-O`, `-s`, `-I`, `-v`, `-X`, `-H`, `-d`), `wget`, `ls` (with `-l`, `-a`, `-la` and colorized file types), `cd`, `pwd`, `mkdir -p`, `touch`, `cat`, `rm -r`, `cp`, `mv`, `echo` (with `>` and `>>` redirection), `clear`, `grep`, `top` / `htop` (live CPU/RAM bars and process lists), `ps aux`, `df -h`, `free -m`, `dmesg`, `whoami`, `uname -a`, `uptime`, `date`, `history`, `tree`, `download`, `upload`, `vfs-export`, `vfs-import`, `theme`, and `reboot`.
 - **Shell Polish**: Autocompletion on `<Tab>`, command history with `<Up>`/`<Down>` arrows, and `<Ctrl+C>` interrupt.
 
 ### 2. ⚡ Exact Authentic Vim Editor Replica (`vim <filename>`)

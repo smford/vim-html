@@ -40,7 +40,7 @@ class TerminalShell {
       this.focus();
     });
 
-    this.cmdInput.addEventListener('keydown', (e) => {
+    this.cmdInput.addEventListener('keydown', async (e) => {
       // Key click audio
       if (window.soundFx) {
         window.soundFx.playKeyClick(e.key);
@@ -51,7 +51,7 @@ class TerminalShell {
         const raw = this.cmdInput.value;
         this.cmdInput.value = '';
         this.historyIndex = -1;
-        this.executeCommandLine(raw);
+        await this.executeCommandLine(raw);
         return;
       }
 
@@ -146,8 +146,8 @@ class TerminalShell {
       const allCommands = [
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
         'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
-        'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'vfs-import', 'vfs-export',
-        'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
+        'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'curl', 'wget', 'vfs-import',
+        'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
       ];
       const matches = allCommands.filter(c => c.startsWith(lastToken));
       if (matches.length === 1) {
@@ -186,7 +186,7 @@ class TerminalShell {
     this.output.appendChild(row);
   }
 
-  executeCommandLine(cmdLine) {
+  async executeCommandLine(cmdLine) {
     const trimmed = cmdLine.trim();
     if (!trimmed) {
       this.appendOutput(this.getPromptHtml());
@@ -222,12 +222,15 @@ class TerminalShell {
     const cmd = tokens[0];
     const args = tokens.slice(1);
 
-    // Execute Command
-    const outputResult = this.dispatchCommand(cmd, args);
+    // Execute Command (supports async commands like curl / wget)
+    let outputResult = this.dispatchCommand(cmd, args);
+    if (outputResult instanceof Promise) {
+      outputResult = await outputResult;
+    }
 
     if (redirectMode && redirectTarget) {
       const targetPath = window.vfs.resolve(this.cwd, redirectTarget);
-      const cleanOutput = outputResult.replace(/<[^>]*>?/gm, ''); // strip HTML tags for raw file storage
+      const cleanOutput = (outputResult || '').replace(/<[^>]*>?/gm, ''); // strip HTML tags for raw file storage
       if (redirectMode === 'overwrite') {
         window.vfs.writeFile(targetPath, cleanOutput + '\n');
       } else {
@@ -319,6 +322,12 @@ class TerminalShell {
 
       case 'dmesg':
         return this.cmdDmesg();
+
+      case 'curl':
+        return this.cmdCurl(args);
+
+      case 'wget':
+        return this.cmdWget(args);
 
       case 'download':
       case 'export':
@@ -550,6 +559,192 @@ class TerminalShell {
     return `<span style="color:var(--accent-danger)">download: cannot read '${this.escapeHtml(args[0])}': File not found</span>`;
   }
 
+  async cmdCurl(args) {
+    if (args.length === 0 || args.includes('-h') || args.includes('--help')) {
+      return `
+        <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">curl — transfer a URL to screen or into the Virtual Filesystem</div>
+        <div><strong>Usage:</strong> curl [options...] &lt;url&gt;</div>
+        <div style="margin-top:6px; font-size:12px; color:var(--text-secondary); line-height:1.6;">
+          <code>-o, --output &lt;file&gt;</code> Write to specific file in VFS<br>
+          <code>-O, --remote-name</code> Write output to a file named like the remote resource<br>
+          <code>-s, --silent</code> Silent mode (don't display progress statistics)<br>
+          <code>-I, --head</code> Fetch and display response headers only<br>
+          <code>-v, --verbose</code> Show request & response headers handshake<br>
+          <code>-H &lt;header&gt;</code> Custom HTTP header (e.g. -H "Authorization: Bearer token")<br>
+          <code>-X &lt;method&gt;</code> Specify HTTP method (GET, POST, etc.)<br>
+          <code>-d &lt;data&gt;</code> HTTP POST payload
+        </div>
+      `;
+    }
+
+    let outputFile = null;
+    let useRemoteName = false;
+    let isSilent = false;
+    let isHeadOnly = false;
+    let isVerbose = false;
+    let method = 'GET';
+    let headers = {};
+    let body = null;
+    let url = null;
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === '-o' || arg === '--output') {
+        outputFile = args[++i];
+      } else if (arg === '-O' || arg === '--remote-name') {
+        useRemoteName = true;
+      } else if (arg === '-s' || arg === '--silent') {
+        isSilent = true;
+      } else if (arg === '-I' || arg === '--head') {
+        isHeadOnly = true;
+        method = 'HEAD';
+      } else if (arg === '-v' || arg === '--verbose') {
+        isVerbose = true;
+      } else if (arg === '-X' || arg === '--request') {
+        method = (args[++i] || 'GET').toUpperCase();
+      } else if (arg === '-H' || arg === '--header') {
+        const h = args[++i];
+        if (h && h.includes(':')) {
+          const [k, ...v] = h.split(':');
+          headers[k.trim()] = v.join(':').trim();
+        }
+      } else if (arg === '-d' || arg === '--data') {
+        body = args[++i];
+        if (method === 'GET') method = 'POST';
+      } else if (!arg.startsWith('-')) {
+        url = arg;
+      }
+    }
+
+    if (!url) {
+      return '<span style="color:var(--accent-danger)">curl: no URL specified!</span> Type <code>curl --help</code> for usage.';
+    }
+
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+
+    try {
+      // Mock internal telemetry endpoints for offline developer testing
+      if (url.includes('api-gateway') || url.includes('sre-node-01/healthz') || url.includes('localhost/healthz')) {
+        const mockData = JSON.stringify({ status: "healthy", cluster: "prod-eu-west-1", uptime_sec: 84291.4, node: "sre-node-01" }, null, 2);
+        if (outputFile || useRemoteName) {
+          const targetFilename = outputFile || 'healthz.json';
+          const savePath = window.vfs.resolve(this.cwd, targetFilename);
+          window.vfs.writeFile(savePath, mockData);
+          if (window.app) window.app.updateSystemStatus();
+          return `<span style="color:var(--accent-primary)">[✓] Successfully downloaded and saved to <strong>${this.escapeHtml(savePath)}</strong> (${mockData.length} bytes).</span>`;
+        }
+        return `<pre style="margin:0; font-family:var(--font-mono);">${this.escapeHtml(mockData)}</pre>`;
+      }
+
+      const fetchOptions = {
+        method: method,
+        headers: headers
+      };
+      if (body && method !== 'GET' && method !== 'HEAD') {
+        fetchOptions.body = body;
+      }
+
+      let res = null;
+      let text = '';
+      let usedFallback = false;
+
+      try {
+        res = await fetch(url, fetchOptions);
+      } catch (err) {
+        // Direct fetch failed due to CORS on the remote site. Try CORS Proxy fallback
+        try {
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+          res = await fetch(proxyUrl);
+          usedFallback = true;
+        } catch (proxyErr) {
+          return `<span style="color:var(--accent-danger)">curl: (6) Could not resolve host or blocked by CORS: ${this.escapeHtml(url)}</span><br><span style="color:var(--text-muted); font-size:11.5px;">Tip: Direct browser HTTP requests require CORS headers from remote servers or internet access.</span>`;
+        }
+      }
+
+      if (isHeadOnly) {
+        let headerStr = `HTTP/1.1 ${res.status} ${res.statusText || 'OK'}\n`;
+        res.headers.forEach((val, key) => {
+          headerStr += `${key}: ${val}\n`;
+        });
+        return `<pre style="margin:0; font-family:var(--font-mono);">${this.escapeHtml(headerStr)}</pre>`;
+      }
+
+      text = await res.text();
+
+      // Handle saving to VFS via -o or -O
+      if (outputFile || useRemoteName) {
+        let targetFilename = outputFile;
+        if (!targetFilename && useRemoteName) {
+          try {
+            const urlObj = new URL(url);
+            const pathname = urlObj.pathname.split('/').filter(Boolean).pop();
+            targetFilename = pathname || 'downloaded_file.txt';
+          } catch (e) {
+            targetFilename = 'downloaded_file.txt';
+          }
+        }
+
+        const savePath = window.vfs.resolve(this.cwd, targetFilename);
+        window.vfs.writeFile(savePath, text);
+        if (window.app) window.app.updateSystemStatus();
+
+        const byteSize = new Blob([text]).size;
+        let progressHtml = '';
+        if (!isSilent) {
+          progressHtml = `
+            <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
+              &nbsp;&nbsp;% Total&nbsp;&nbsp;&nbsp;&nbsp;% Received % Xferd&nbsp;&nbsp;Average Speed&nbsp;&nbsp;&nbsp;Time&nbsp;&nbsp;&nbsp;&nbsp;Time&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time&nbsp;&nbsp;Current<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dload&nbsp;&nbsp;Upload&nbsp;&nbsp;&nbsp;Total&nbsp;&nbsp;&nbsp;Spent&nbsp;&nbsp;&nbsp;&nbsp;Left&nbsp;&nbsp;Speed<br>
+              100 ${String(byteSize).padStart(5, ' ')}&nbsp;&nbsp;100 ${String(byteSize).padStart(5, ' ')}&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;${Math.round(byteSize * 1.2)}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0 --:--:-- --:--:-- --:--:-- ${Math.round(byteSize * 1.2)}
+            </div>
+          `;
+        }
+
+        return `${progressHtml}<span style="color:var(--accent-primary)">[✓] Successfully downloaded and saved to <strong>${this.escapeHtml(savePath)}</strong> (${byteSize} bytes).</span>`;
+      }
+
+      // Output directly to terminal stdout
+      let verbosePrefix = '';
+      if (isVerbose) {
+        let hostname = 'unknown';
+        let path = '/';
+        try {
+          const u = new URL(url);
+          hostname = u.hostname;
+          path = u.pathname;
+        } catch (e) {}
+        verbosePrefix = `* Connected to ${hostname}\n> ${method} ${path} HTTP/1.1\n> Host: ${hostname}\n< HTTP/1.1 ${res.status} ${res.statusText || 'OK'}\n\n`;
+      }
+
+      return `<pre style="margin:0; font-family:var(--font-mono); white-space:pre-wrap; word-break:break-word;">${this.escapeHtml(verbosePrefix + text)}</pre>`;
+    } catch (err) {
+      return `<span style="color:var(--accent-danger)">curl: (7) Failed to connect to ${this.escapeHtml(url)}: ${this.escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  async cmdWget(args) {
+    if (args.length === 0) {
+      return 'wget: missing URL<br>Usage: wget [-O &lt;file&gt;] &lt;URL&gt;';
+    }
+    let outputFile = null;
+    let url = null;
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-O' || args[i] === '--output-document') {
+        outputFile = args[++i];
+      } else if (!args[i].startsWith('-')) {
+        url = args[i];
+      }
+    }
+
+    if (!url) return 'wget: missing URL';
+
+    const curlArgs = outputFile ? ['-o', outputFile, url] : ['-O', url];
+    return this.cmdCurl(curlArgs);
+  }
+
   cmdVfsImport(args) {
     if (args.length === 0) {
       if (window.app && window.app.vfsImporterInput) {
@@ -665,7 +860,10 @@ class TerminalShell {
       <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:6px;">Available Shell Commands:</div>
       <table class="term-table">
         <tr><td><strong style="color:var(--accent-primary)">vim &lt;file&gt;</strong></td><td>Open or create file in authentic Vim editor (vi / nvim)</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">curl [-o &lt;file&gt;|-O] &lt;url&gt;</strong></td><td>Download/Fetch file from website or API into VFS or stdout</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">wget [-O &lt;file&gt;] &lt;url&gt;</strong></td><td>Download file from internet URL directly into VFS</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">download &lt;file&gt;</strong></td><td>Download/Export file to your computer's Downloads folder</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">vfs-export / vfs-import</strong></td><td>Backup or restore entire Virtual Filesystem as JSON archive</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">ls [-la]</strong></td><td>List files in current directory with colors/permissions</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">tree</strong></td><td>Display directory hierarchy tree</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">cd &lt;dir&gt;</strong></td><td>Change directory (cd ~, cd .., cd /etc)</td></tr>

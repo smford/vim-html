@@ -145,7 +145,7 @@ class TerminalShell {
       // Command autocompletion (case-insensitive)
       const allCommands = [
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
-        'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
+        'echo', 'clear', 'help', 'about', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
         'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'curl', 'wget', 'vfs-import',
         'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme', 'version', 'ver'
       ];
@@ -362,7 +362,10 @@ class TerminalShell {
         return '';
 
       case 'help':
-        return this.cmdHelp();
+        return this.cmdHelp(args);
+
+      case 'about':
+        return this.cmdAbout();
 
       case 'version':
       case 'ver':
@@ -466,6 +469,32 @@ class TerminalShell {
     if (this.activeIndicator) this.activeIndicator.textContent = 'VIM';
     window.vimApp.openFile(resolvedPath, content);
     return '';
+  }
+
+  cmdAbout() {
+    return `
+      <div style="font-family:var(--font-mono); line-height:1.6; font-size:13px; max-width:640px; margin: 4px 0;">
+        <div style="color:var(--accent-primary); font-weight:bold; font-size:15px; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+          <span>🚀 About vim-html</span>
+          <span style="font-size:11px; background:var(--bg-tertiary); color:var(--accent-secondary); padding:2px 8px; border-radius:4px; border:1px solid var(--border-subtle);">v2.4.0</span>
+        </div>
+        <div style="color:var(--text-primary); margin-bottom:10px;">
+          <strong>vim-html</strong> is an authentic, zero-dependency in-browser replica of the legendary <strong>Vim text editor</strong> paired with a simulated Linux SRE workstation terminal shell.
+        </div>
+        <div style="color:var(--text-secondary); font-size:12.5px; margin-bottom:12px; line-height:1.5;">
+          Built for site reliability engineers, systems programmers, and developers who need a frictionless, high-fidelity Vim environment directly in their browser — complete with modal editing (Normal, Insert, Visual, Visual Line, Command, Search, Replace), syntax highlighting, in-memory virtual filesystem with JSON backups, synthesized mechanical keyboard audio, and simulated Linux 6.12 kernel boot.
+        </div>
+        <div style="padding:10px 14px; background:var(--bg-tertiary); border-left:3px solid var(--accent-aqua); border-radius:var(--radius-sm); margin-bottom:12px; font-size:12.5px;">
+          <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">🔗 GitHub Repository & Source Code:</div>
+          <div>
+            <a href="https://github.com/smford/vim-html" target="_blank" rel="noopener noreferrer" style="color:var(--accent-tertiary); font-weight:600; text-decoration:underline; word-break:break-all;">https://github.com/smford/vim-html</a>
+          </div>
+        </div>
+        <div style="color:var(--text-muted); font-size:11.5px;">
+          ⭐ Star the repository on GitHub or contribute issues and pull requests!
+        </div>
+      </div>
+    `;
   }
 
   cmdVersion() {
@@ -1385,10 +1414,53 @@ class TerminalShell {
     `;
   }
 
-  cmdHelp() {
+  cmdHelp(args = []) {
+    if (args && args.length > 0) {
+      const topic = args[0].toLowerCase();
+      switch (topic) {
+        case 'about':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: about — Display project overview and repository details</div>
+            <div><strong>Usage:</strong> about</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Displays the vim-html mission, architectural overview, and a direct link to <a href="https://github.com/smford/vim-html" target="_blank" style="color:var(--accent-tertiary);">https://github.com/smford/vim-html</a>.</div>
+          `;
+        case 'vim':
+        case 'vi':
+        case 'nvim':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: vim — Open or create file in authentic Vim editor</div>
+            <div><strong>Usage:</strong> vim [options] &lt;filename&gt;</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Switches to full-screen Vim buffer with Normal, Insert, Visual, Visual Line, Command, Search, and Replace modes.</div>
+          `;
+        case 'ls':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: ls — List directory contents</div>
+            <div><strong>Usage:</strong> ls [-latrSh1] [path]</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Flags: -l (long format), -a (all hidden files), -t (sort by time), -r (reverse sort), -S (sort by size), -h (human readable).</div>
+          `;
+        case 'cat':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: cat — Print file contents</div>
+            <div><strong>Usage:</strong> cat [--raw] &lt;file&gt;</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Renders .md files with GitHub Flavored Markdown (headings, tables, alerts, code blocks, images). Use --raw for unrendered text.</div>
+          `;
+        case 'curl':
+          return this.cmdCurl(['--help']);
+        case 'version':
+        case 'ver':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: version — Display system & engine version</div>
+            <div><strong>Usage:</strong> version</div>
+          `;
+        default:
+          break;
+      }
+    }
+
     return `
       <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:6px;">Available Shell Commands:</div>
       <table class="term-table">
+        <tr><td><strong style="color:var(--accent-primary)">about</strong></td><td>Display vim-html project mission, overview, and GitHub link</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">vim &lt;file&gt;</strong></td><td>Open or create file in authentic Vim editor (vi / nvim)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">curl [-o &lt;file&gt;|-O] &lt;url&gt;</strong></td><td>Download/Fetch file from website or API into VFS or stdout</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">wget [-O &lt;file&gt;] &lt;url&gt;</strong></td><td>Download file from internet URL directly into VFS</td></tr>

@@ -146,7 +146,8 @@ class TerminalShell {
       const allCommands = [
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
         'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
-        'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'history', 'grep', 'reboot', 'theme'
+        'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'vfs-import', 'vfs-export',
+        'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
       ];
       const matches = allCommands.filter(c => c.startsWith(lastToken));
       if (matches.length === 1) {
@@ -322,6 +323,15 @@ class TerminalShell {
       case 'download':
       case 'export':
         return this.cmdDownload(args);
+
+      case 'vfs-export':
+      case 'export-vfs':
+        window.vfs.exportAll();
+        return '<span style="color:var(--accent-primary)">[✓] Triggered Virtual Filesystem backup download.</span>';
+
+      case 'vfs-import':
+      case 'import-vfs':
+        return this.cmdVfsImport(args);
 
       case 'upload':
         if (window.app) window.app.triggerFileUpload();
@@ -538,6 +548,29 @@ class TerminalShell {
       return `<span style="color:var(--accent-primary)">[✓] Successfully exported '${this.escapeHtml(args[0])}' to browser download manager.</span>`;
     }
     return `<span style="color:var(--accent-danger)">download: cannot read '${this.escapeHtml(args[0])}': File not found</span>`;
+  }
+
+  cmdVfsImport(args) {
+    if (args.length === 0) {
+      if (window.app && window.app.vfsImporterInput) {
+        window.app.vfsImporterInput.click();
+        return 'Opening VFS backup file selector dialog...';
+      }
+      return 'Usage: vfs-import &lt;vfs_backup_file.json&gt;';
+    }
+
+    const target = window.vfs.resolve(this.cwd, args[0]);
+    const content = window.vfs.readFile(target);
+    if (!content) {
+      return `<span style="color:var(--accent-danger)">vfs-import: cannot read '${this.escapeHtml(args[0])}': File not found</span>`;
+    }
+
+    const res = window.vfs.importTree(content);
+    if (res.success) {
+      if (window.app) window.app.updateSystemStatus();
+      return `<span style="color:var(--accent-primary)">[✓] Successfully restored Virtual Filesystem (${res.filesRestored} files, ${res.dirsRestored} directories) from <strong>${this.escapeHtml(args[0])}</strong>.</span>`;
+    }
+    return `<span style="color:var(--accent-danger)">vfs-import error: ${this.escapeHtml(res.error || 'Failed to restore VFS')}</span>`;
   }
 
   cmdGrep(args) {

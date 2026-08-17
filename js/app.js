@@ -26,6 +26,8 @@ class AppController {
     this.btnQuickNew = document.getElementById('btn-quick-new');
     this.btnQuickDownload = document.getElementById('btn-quick-download');
     this.btnExportZip = document.getElementById('btn-export-zip');
+    this.btnImportVfs = document.getElementById('btn-import-vfs');
+    this.vfsImporterInput = document.getElementById('vfs-importer-input');
     this.btnUploadFile = document.getElementById('btn-upload-file');
     this.fileUploaderInput = document.getElementById('file-uploader-input');
     
@@ -218,26 +220,45 @@ class AppController {
     });
 
     // Export entire VFS backup
-    this.btnExportZip.addEventListener('click', () => {
-      window.vfs.exportAll();
-      this.showToast('Exported entire filesystem as JSON backup', 'success');
-    });
+    if (this.btnExportZip) {
+      this.btnExportZip.addEventListener('click', () => {
+        window.vfs.exportAll();
+        this.showToast('Exported entire filesystem as JSON backup', 'success');
+      });
+    }
+
+    // Import VFS backup
+    if (this.btnImportVfs) {
+      this.btnImportVfs.addEventListener('click', () => {
+        this.vfsImporterInput.click();
+      });
+    }
+
+    if (this.vfsImporterInput) {
+      this.vfsImporterInput.addEventListener('change', (e) => {
+        this.handleUploadedFiles(e.target.files, true);
+      });
+    }
 
     // Upload files
-    this.btnUploadFile.addEventListener('click', () => {
-      this.triggerFileUpload();
-    });
+    if (this.btnUploadFile) {
+      this.btnUploadFile.addEventListener('click', () => {
+        this.triggerFileUpload();
+      });
+    }
 
-    this.fileUploaderInput.addEventListener('change', (e) => {
-      this.handleUploadedFiles(e.target.files);
-    });
+    if (this.fileUploaderInput) {
+      this.fileUploaderInput.addEventListener('change', (e) => {
+        this.handleUploadedFiles(e.target.files, false);
+      });
+    }
   }
 
   triggerFileUpload() {
     this.fileUploaderInput.click();
   }
 
-  handleUploadedFiles(files) {
+  handleUploadedFiles(files, forceVfsImport = false) {
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
@@ -245,18 +266,54 @@ class AppController {
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target.result;
+
+        // Check if this file is a VFS backup (or forced via Import VFS button)
+        let isBackup = forceVfsImport || file.name.endsWith('.json');
+        if (isBackup) {
+          try {
+            const parsed = JSON.parse(content);
+            if (window.vfs.isVfsBackup(parsed)) {
+              const res = window.vfs.importTree(parsed);
+              if (res.success) {
+                this.updateSystemStatus();
+                this.showToast(`Restored VFS (${res.filesRestored} files, ${res.dirsRestored} dirs)`, 'success');
+                if (window.terminalApp) {
+                  window.terminalApp.appendOutput(
+                    `<span style="color:var(--accent-primary)">[✓] Virtual Filesystem restored successfully from <strong>${this.escapeHtml(file.name)}</strong> (${res.filesRestored} files, ${res.dirsRestored} directories).</span>`
+                  );
+                  window.terminalApp.scrollToBottom();
+                }
+                return;
+              }
+            }
+          } catch (e) {
+            // Not a valid JSON or not a backup, proceed to regular upload
+          }
+        }
+
+        // Regular file upload into current working directory
         const targetDir = window.terminalApp ? window.terminalApp.cwd : '/home/user';
         const targetPath = `${targetDir}/${file.name}`;
         window.vfs.writeFile(targetPath, content);
         this.updateSystemStatus();
         this.showToast(`Uploaded ${file.name} to ${targetDir}`, 'success');
         if (window.terminalApp) {
-          window.terminalApp.appendOutput(`<span style="color:var(--accent-primary)">[✓] Uploaded file: ${file.name} (${file.size} bytes)</span>`);
+          window.terminalApp.appendOutput(`<span style="color:var(--accent-primary)">[✓] Uploaded file: ${this.escapeHtml(file.name)} (${file.size} bytes)</span>`);
           window.terminalApp.scrollToBottom();
         }
       };
       reader.readAsText(file);
     }
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   initDragAndDrop() {

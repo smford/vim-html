@@ -630,23 +630,64 @@ SwapFree:        2097148 kB
   }
 
   /**
-   * Import files from a JSON bundle
+   * Import files from a JSON bundle or string
    */
   importTree(importedData) {
-    if (!importedData || !importedData.filesystem) return false;
-    const restoreNode = (srcNode, targetPath) => {
-      if (srcNode.type === 'file') {
-        this.writeFile(targetPath, srcNode.content || '');
-      } else if (srcNode.type === 'dir' && srcNode.children) {
-        this.mkdir(targetPath, true);
-        for (const childName in srcNode.children) {
-          const subPath = targetPath === '/' ? '/' + childName : targetPath + '/' + childName;
-          restoreNode(srcNode.children[childName], subPath);
-        }
+    try {
+      if (typeof importedData === 'string') {
+        importedData = JSON.parse(importedData);
       }
-    };
-    restoreNode(importedData.filesystem, '/');
-    return true;
+      if (!importedData || !importedData.filesystem) {
+        return { success: false, error: 'Invalid VFS backup format: missing filesystem root' };
+      }
+
+      let filesRestored = 0;
+      let dirsRestored = 0;
+
+      const restoreNode = (srcNode, targetPath) => {
+        if (!srcNode) return;
+        if (srcNode.type === 'file') {
+          this.writeFile(targetPath, srcNode.content !== undefined ? srcNode.content : '');
+          const createdNode = this.getNode(targetPath);
+          if (createdNode && srcNode.permissions) createdNode.permissions = srcNode.permissions;
+          if (createdNode && srcNode.mtime) createdNode.mtime = new Date(srcNode.mtime);
+          filesRestored++;
+        } else if (srcNode.type === 'dir') {
+          if (targetPath !== '/') {
+            this.mkdir(targetPath, true);
+            const dirNode = this.getNode(targetPath);
+            if (dirNode && srcNode.permissions) dirNode.permissions = srcNode.permissions;
+            dirsRestored++;
+          }
+          if (srcNode.children) {
+            for (const childName in srcNode.children) {
+              const subPath = targetPath === '/' ? '/' + childName : targetPath + '/' + childName;
+              restoreNode(srcNode.children[childName], subPath);
+            }
+          }
+        }
+      };
+
+      restoreNode(importedData.filesystem, '/');
+      return { success: true, filesRestored, dirsRestored, exportedAt: importedData.exportedAt };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Helper to check if a parsed object is a valid VFS backup
+   */
+  isVfsBackup(data) {
+    if (!data) return false;
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        return false;
+      }
+    }
+    return Boolean(data && data.filesystem && data.filesystem.type === 'dir');
   }
 }
 

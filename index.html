@@ -65,9 +65,15 @@
           <span>Export VFS</span>
         </button>
 
+        <button class="nav-btn" id="btn-import-vfs" title="Upload/Restore a previously downloaded VFS JSON backup">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/><path d="M7 14l5-5 5 5"/></svg>
+          <span>Import VFS</span>
+        </button>
+        <input type="file" id="vfs-importer-input" accept=".json,application/json" style="display:none">
+
         <button class="nav-btn" id="btn-upload-file" title="Upload local file to virtual filesystem">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-          <span>Upload</span>
+          <span>Upload File</span>
         </button>
         <input type="file" id="file-uploader-input" multiple style="display:none">
 
@@ -388,12 +394,13 @@
               <li><code>server.py</code> — Python FastAPI microservice template</li>
               <li><code>nginx.conf</code> — High performance reverse proxy configuration</li>
             </ul>
-            <h3 style="margin-top: 18px;">How to Download Files</h3>
+            <h3 style="margin-top: 18px;">How to Download & Restore Files / VFS</h3>
             <ol style="margin-left: 20px; margin-top: 8px; line-height: 1.8;">
               <li><strong>Inside Vim</strong>: Type <code>:download</code> or <code>:export</code> or <code>:w !download</code> and press <kbd>Enter</kbd>.</li>
               <li><strong>In Terminal</strong>: Run <code>download &lt;filename&gt;</code> (e.g. <code>download server.py</code>).</li>
-              <li><strong>Top Navigation Bar</strong>: Click the <strong>Download</strong> button anytime while editing a file, or click <strong>Export VFS</strong> to download your entire filesystem state as a JSON backup.</li>
-              <li><strong>Upload Files</strong>: Drag & drop files onto the browser window or click <strong>Upload</strong> in the top bar to place them right into your current virtual directory!</li>
+              <li><strong>Backup Entire System</strong>: Click <strong>Export VFS</strong> in the top navigation bar or run <code>export-vfs</code> in the terminal to save your workspace as a JSON archive.</li>
+              <li><strong>Restore Previously Downloaded VFS</strong>: Click <strong>Import VFS</strong>, run <code>vfs-import &lt;file.json&gt;</code>, or simply <strong>drag-and-drop</strong> your <code>vfs_export_*.json</code> file anywhere onto the page!</li>
+              <li><strong>Upload Regular Files</strong>: Drag & drop any text/code files onto the browser window or click <strong>Upload File</strong> to place them directly into your current directory.</li>
             </ol>
           </div>
         </div>

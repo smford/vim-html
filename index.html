@@ -351,13 +351,13 @@
               <h3>File & Directory Management</h3>
               <ul>
                 <li><code>vim &lt;file&gt;</code> / <code>vi &lt;file&gt;</code> — Open or create file in Vim</li>
-                <li><code>ls</code> / <code>ls -la</code> / <code>ls -l</code> — List files with metadata/hidden</li>
+                <li><code>ls [-latrSh1]</code> — List files, sort reverse chronological (<code>ls -latr</code>), size (<code>-S</code>), all (<code>-a</code>)</li>
                 <li><code>tree</code> — Display directory tree hierarchy</li>
                 <li><code>cd &lt;dir&gt;</code> / <code>cd ..</code> / <code>cd ~</code> — Change directory</li>
                 <li><code>pwd</code> — Print current working directory</li>
                 <li><code>mkdir &lt;dir&gt;</code> / <code>mkdir -p</code> — Create directory</li>
                 <li><code>touch &lt;file&gt;</code> — Create empty file or update timestamp</li>
-                <li><code>cat &lt;file&gt;</code> — Display file content</li>
+                <li><code>cat &lt;file&gt;</code> — Display file content (GFM markdown graphical viewer for <code>.md</code>)</li>
                 <li><code>rm &lt;file&gt;</code> / <code>rm -r &lt;dir&gt;</code> — Remove file or directory</li>
                 <li><code>cp &lt;src&gt; &lt;dst&gt;</code> — Copy file</li>
                 <li><code>mv &lt;src&gt; &lt;dst&gt;</code> — Move or rename file</li>
@@ -379,6 +379,8 @@
                 <li><code>top</code> / <code>htop</code> / <code>ps aux</code> — View system processes</li>
                 <li><code>df -h</code> / <code>free -m</code> — View storage and memory</li>
                 <li><code>dmesg</code> / <code>journalctl</code> — View kernel & system logs</li>
+                <li><code>version</code> / <code>ver</code> — Display system & Vim engine version details</li>
+                <li><code>about</code> — Display vim-html project mission & GitHub repo link</li>
                 <li><code>reboot</code> — Restart Linux boot simulation</li>
               </ul>
             </div>

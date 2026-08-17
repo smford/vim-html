@@ -139,17 +139,18 @@ class TerminalShell {
   handleTabCompletion() {
     const text = this.cmdInput.value;
     const tokens = text.split(/\s+/);
-    const lastToken = tokens[tokens.length - 1];
+    const lastToken = tokens[tokens.length - 1] || '';
 
     if (tokens.length === 1 && !text.includes(' ')) {
-      // Command autocompletion
+      // Command autocompletion (case-insensitive)
       const allCommands = [
         'vim', 'vi', 'nvim', 'ls', 'cd', 'pwd', 'mkdir', 'touch', 'cat', 'rm', 'cp', 'mv',
-        'echo', 'clear', 'help', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
+        'echo', 'clear', 'help', 'about', 'date', 'whoami', 'uname', 'top', 'htop', 'ps', 'uptime',
         'df', 'free', 'dmesg', 'tree', 'download', 'upload', 'curl', 'wget', 'vfs-import',
-        'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme'
+        'vfs-export', 'import-vfs', 'export-vfs', 'history', 'grep', 'reboot', 'theme', 'version', 'ver'
       ];
-      const matches = allCommands.filter(c => c.startsWith(lastToken));
+      const lowerLastToken = lastToken.toLowerCase();
+      const matches = allCommands.filter(c => c.toLowerCase().startsWith(lowerLastToken));
       if (matches.length === 1) {
         this.cmdInput.value = matches[0] + ' ';
       } else if (matches.length > 1) {
@@ -158,18 +159,89 @@ class TerminalShell {
         this.scrollToBottom();
       }
     } else {
-      // File / Directory autocompletion
-      const currentItems = window.vfs.readdir(this.cwd) || [];
-      const matchPrefix = lastToken.startsWith('/') ? lastToken : lastToken;
-      const candidates = currentItems.map(i => i.type === 'dir' ? i.name + '/' : i.name);
-      const matches = candidates.filter(name => name.startsWith(matchPrefix));
+      // File / Directory autocompletion (case-insensitive)
+      let searchDir = this.cwd;
+      let filePrefix = lastToken;
+      let pathPrefix = '';
 
-      if (matches.length === 1) {
-        tokens[tokens.length - 1] = matches[0];
+      if (lastToken.includes('/')) {
+        const lastSlashIndex = lastToken.lastIndexOf('/');
+        pathPrefix = lastToken.slice(0, lastSlashIndex + 1);
+        filePrefix = lastToken.slice(lastSlashIndex + 1);
+
+        // Resolve directory path case-insensitively segment-by-segment
+        const rawSegments = pathPrefix.split('/').filter(Boolean);
+        let currentResolved = pathPrefix.startsWith('/') ? '/' : this.cwd;
+        let resolvedPathPrefix = pathPrefix.startsWith('/') ? '/' : '';
+
+        let pathValid = true;
+        for (const seg of rawSegments) {
+          if (seg === '.') {
+            resolvedPathPrefix += './';
+            continue;
+          }
+          if (seg === '..') {
+            currentResolved = window.vfs.resolve(currentResolved, '..');
+            resolvedPathPrefix += '../';
+            continue;
+          }
+          if (seg === '~') {
+            currentResolved = '/home/user';
+            resolvedPathPrefix = '~/';
+            continue;
+          }
+
+          const items = window.vfs.readdir(currentResolved) || [];
+          const matchDir = items.find(i => i.type === 'dir' && i.name.toLowerCase() === seg.toLowerCase());
+          if (matchDir) {
+            currentResolved = window.vfs.resolve(currentResolved, matchDir.name);
+            resolvedPathPrefix += matchDir.name + '/';
+          } else {
+            pathValid = false;
+            break;
+          }
+        }
+
+        if (pathValid) {
+          searchDir = currentResolved;
+          pathPrefix = resolvedPathPrefix;
+        } else {
+          searchDir = window.vfs.resolve(this.cwd, pathPrefix);
+        }
+      }
+
+      const currentItems = window.vfs.readdir(searchDir) || [];
+      const lowerFilePrefix = filePrefix.toLowerCase();
+      
+      const matchingItems = currentItems.filter(item => 
+        item.name.toLowerCase().startsWith(lowerFilePrefix)
+      );
+
+      if (matchingItems.length === 1) {
+        const item = matchingItems[0];
+        const completion = pathPrefix + item.name + (item.type === 'dir' ? '/' : ' ');
+        tokens[tokens.length - 1] = completion;
         this.cmdInput.value = tokens.join(' ');
-      } else if (matches.length > 1) {
+      } else if (matchingItems.length > 1) {
+        const names = matchingItems.map(i => i.type === 'dir' ? i.name + '/' : i.name);
+
+        // Find longest common prefix among matching items (case-insensitive comparison)
+        let commonPrefix = names[0];
+        for (let i = 1; i < names.length; i++) {
+          let j = 0;
+          while (j < commonPrefix.length && j < names[i].length && commonPrefix[j].toLowerCase() === names[i][j].toLowerCase()) {
+            j++;
+          }
+          commonPrefix = commonPrefix.slice(0, j);
+        }
+
+        if (commonPrefix.length > filePrefix.length) {
+          tokens[tokens.length - 1] = pathPrefix + commonPrefix;
+          this.cmdInput.value = tokens.join(' ');
+        }
+
         this.appendOutput(`${this.getPromptHtml()} ${text}`);
-        this.appendOutput(matches.join('  '));
+        this.appendOutput(names.join('  '));
         this.scrollToBottom();
       }
     }
@@ -290,7 +362,16 @@ class TerminalShell {
         return '';
 
       case 'help':
-        return this.cmdHelp();
+        return this.cmdHelp(args);
+
+      case 'about':
+        return this.cmdAbout();
+
+      case 'version':
+      case 'ver':
+      case '--version':
+      case '-v':
+        return this.cmdVersion();
 
       case 'date':
         return new Date().toUTCString();
@@ -375,7 +456,11 @@ class TerminalShell {
   // ==========================================
 
   cmdVim(args) {
-    const fileName = args[0] || 'untitled.txt';
+    if (args.includes('--version') || args.includes('-v')) {
+      return this.cmdVersion();
+    }
+
+    const fileName = args.find(a => !a.startsWith('-')) || 'untitled.txt';
     const resolvedPath = window.vfs.resolve(this.cwd, fileName);
     const content = window.vfs.readFile(resolvedPath) || '';
 
@@ -386,43 +471,157 @@ class TerminalShell {
     return '';
   }
 
+  cmdAbout() {
+    return `
+      <div style="font-family:var(--font-mono); line-height:1.6; font-size:13px; max-width:640px; margin: 4px 0;">
+        <div style="color:var(--accent-primary); font-weight:bold; font-size:15px; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+          <span>🚀 About vim-html</span>
+          <span style="font-size:11px; background:var(--bg-tertiary); color:var(--accent-secondary); padding:2px 8px; border-radius:4px; border:1px solid var(--border-subtle);">v2.4.0</span>
+        </div>
+        <div style="color:var(--text-primary); margin-bottom:10px;">
+          <strong>vim-html</strong> is an authentic, zero-dependency in-browser replica of the legendary <strong>Vim text editor</strong> paired with a simulated Linux SRE workstation terminal shell.
+        </div>
+        <div style="color:var(--text-secondary); font-size:12.5px; margin-bottom:12px; line-height:1.5;">
+          Built for site reliability engineers, systems programmers, and developers who need a frictionless, high-fidelity Vim environment directly in their browser — complete with modal editing (Normal, Insert, Visual, Visual Line, Command, Search, Replace), syntax highlighting, in-memory virtual filesystem with JSON backups, synthesized mechanical keyboard audio, and simulated Linux 6.12 kernel boot.
+        </div>
+        <div style="padding:10px 14px; background:var(--bg-tertiary); border-left:3px solid var(--accent-aqua); border-radius:var(--radius-sm); margin-bottom:12px; font-size:12.5px;">
+          <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">🔗 GitHub Repository & Source Code:</div>
+          <div>
+            <a href="https://github.com/smford/vim-html" target="_blank" rel="noopener noreferrer" style="color:var(--accent-tertiary); font-weight:600; text-decoration:underline; word-break:break-all;">https://github.com/smford/vim-html</a>
+          </div>
+        </div>
+        <div style="color:var(--text-muted); font-size:11.5px;">
+          ⭐ Star the repository on GitHub or contribute issues and pull requests!
+        </div>
+      </div>
+    `;
+  }
+
+  cmdVersion() {
+    return `
+      <div style="font-family:var(--font-mono); line-height:1.6; font-size:12.5px;">
+        <div style="color:var(--accent-primary); font-weight:bold; font-size:13.5px; margin-bottom:2px;">vim-html v2.4.0 (x86_64-linux-wasm)</div>
+        <div style="color:var(--text-secondary);">VIM - Vi IMproved 9.1 (Included patches: 1-1842)</div>
+        <div style="color:var(--text-muted); font-size:11.5px; margin: 4px 0 10px 0;">Compiled by sre-core-team@sre-node-01 on Mon Aug 17 2026 22:45:00 UTC</div>
+        <div style="color:var(--accent-secondary); font-weight:600; margin-bottom:4px;">Engine & Environment Specifications:</div>
+        <table class="term-table" style="max-width:580px;">
+          <tr><td><strong style="color:var(--text-primary)">Kernel Release:</strong></td><td>Linux 6.12.8-sre-generic #42-SMP PREEMPT</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Virtual Filesystem:</strong></td><td>Hierarchical In-Memory VFS (v2.0, JSON Snapshotting)</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Audio Subsystem:</strong></td><td>Web Audio API Polyphonic Synthesizer</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Terminal Shell:</strong></td><td>SRE GNU/Bash 5.2 Emulation Layer</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">Features:</strong></td><td>+syntax +gfm_markdown +curl +wget +vfs_backup +sound +themes +latr</td></tr>
+          <tr><td><strong style="color:var(--text-primary)">License:</strong></td><td>Vim charityware / MIT Open Source</td></tr>
+        </table>
+      </div>
+    `;
+  }
+
   cmdLs(args) {
-    const showAll = args.some(a => a.includes('a'));
-    const isLong = args.some(a => a.includes('l'));
-    
-    // Find target path if provided
-    const pathArg = args.find(a => !a.startsWith('-')) || '.';
-    const resolved = window.vfs.resolve(this.cwd, pathArg);
+    let showAll = false;
+    let isLong = false;
+    let sortByTime = false;
+    let sortBySize = false;
+    let reverseSort = false;
+    let humanReadable = false;
+    let singleColumn = false;
+    let targetPath = '.';
+
+    for (const arg of args) {
+      if (arg.startsWith('-') && arg.length > 1) {
+        for (const char of arg.slice(1)) {
+          if (char === 'a') showAll = true;
+          else if (char === 'l') isLong = true;
+          else if (char === 't') sortByTime = true;
+          else if (char === 'r') reverseSort = true;
+          else if (char === 'h') humanReadable = true;
+          else if (char === 'S') sortBySize = true;
+          else if (char === '1') singleColumn = true;
+        }
+      } else {
+        targetPath = arg;
+      }
+    }
+
+    const resolved = window.vfs.resolve(this.cwd, targetPath);
 
     if (!window.vfs.exists(resolved)) {
-      return `<span style="color:var(--accent-danger)">ls: cannot access '${this.escapeHtml(pathArg)}': No such file or directory</span>`;
+      return `<span style="color:var(--accent-danger)">ls: cannot access '${this.escapeHtml(targetPath)}': No such file or directory</span>`;
     }
 
     if (window.vfs.isFile(resolved)) {
       const node = window.vfs.getNode(resolved);
+      const sizeStr = this.formatSize(node.size, humanReadable);
       return isLong 
-        ? `${node.permissions} 1 ${node.owner} ${node.group} ${String(node.size).padStart(6, ' ')} ${this.formatDate(node.mtime)} <span class="term-exec">${node.name}</span>`
+        ? `${node.permissions} 1 ${node.owner} ${node.group} ${sizeStr.padStart(6, ' ')} ${this.formatDate(node.mtime)} <span class="term-exec">${node.name}</span>`
         : `<span class="term-exec">${node.name}</span>`;
     }
 
-    const items = window.vfs.readdir(resolved) || [];
-    const filtered = showAll ? items : items.filter(i => !i.name.startsWith('.'));
+    let items = (window.vfs.readdir(resolved) || []).slice();
 
-    if (filtered.length === 0) return '';
+    if (showAll) {
+      const parentDir = window.vfs.resolve(resolved, '..');
+      const currNode = window.vfs.getNode(resolved);
+      const parentNode = window.vfs.getNode(parentDir);
+
+      const dotEntries = [
+        {
+          name: '.',
+          type: 'dir',
+          permissions: 'drwxr-xr-x',
+          owner: currNode?.owner || 'user',
+          group: currNode?.group || 'user',
+          size: 4096,
+          mtime: currNode?.mtime || new Date()
+        },
+        {
+          name: '..',
+          type: 'dir',
+          permissions: 'drwxr-xr-x',
+          owner: parentNode?.owner || 'root',
+          group: parentNode?.group || 'root',
+          size: 4096,
+          mtime: parentNode?.mtime || new Date()
+        }
+      ];
+      items = dotEntries.concat(items);
+    } else {
+      items = items.filter(i => !i.name.startsWith('.'));
+    }
+
+    if (items.length === 0) return '';
+
+    // Sorting logic
+    if (sortByTime) {
+      items.sort((a, b) => {
+        const timeA = new Date(a.mtime || 0).getTime();
+        const timeB = new Date(b.mtime || 0).getTime();
+        return timeB - timeA; // Newest first
+      });
+    } else if (sortBySize) {
+      items.sort((a, b) => (b.size || 0) - (a.size || 0)); // Largest first
+    } else {
+      items.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    if (reverseSort) {
+      items.reverse();
+    }
 
     if (isLong) {
-      let html = `<div style="color:var(--text-muted); margin-bottom:4px;">total ${filtered.length * 4}</div><table class="term-table">`;
-      for (const item of filtered) {
+      const totalBlocks = Math.ceil(items.reduce((acc, i) => acc + (i.size || 0), 0) / 1024) * 4;
+      let html = `<div style="color:var(--text-muted); margin-bottom:4px;">total ${totalBlocks}</div><table class="term-table">`;
+      for (const item of items) {
         const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
+        const sizeStr = this.formatSize(item.size, humanReadable);
         html += `
           <tr>
             <td>${item.permissions}</td>
             <td>1</td>
             <td>${item.owner}</td>
             <td>${item.group}</td>
-            <td style="text-align:right;">${item.size}</td>
+            <td style="text-align:right;">${sizeStr}</td>
             <td>${this.formatDate(item.mtime)}</td>
-            <td><span class="${typeClass}">${item.name}${item.type === 'dir' ? '/' : ''}</span></td>
+            <td><span class="${typeClass}">${item.name}${item.type === 'dir' && item.name !== '.' && item.name !== '..' ? '/' : ''}</span></td>
           </tr>
         `;
       }
@@ -430,8 +629,15 @@ class TerminalShell {
       return html;
     }
 
+    if (singleColumn) {
+      return items.map(item => {
+        const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
+        return `<div class="${typeClass}">${item.name}${item.type === 'dir' ? '/' : ''}</div>`;
+      }).join('');
+    }
+
     // Grid layout
-    return filtered.map(item => {
+    return items.map(item => {
       const typeClass = item.type === 'dir' ? 'term-dir' : (item.name.endsWith('.sh') || item.name.endsWith('.py') ? 'term-exec' : '');
       return `<span class="${typeClass}" style="display:inline-block; min-width:140px; margin-right:16px;">${item.name}${item.type === 'dir' ? '/' : ''}</span>`;
     }).join('');
@@ -1208,22 +1414,65 @@ class TerminalShell {
     `;
   }
 
-  cmdHelp() {
+  cmdHelp(args = []) {
+    if (args && args.length > 0) {
+      const topic = args[0].toLowerCase();
+      switch (topic) {
+        case 'about':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: about — Display project overview and repository details</div>
+            <div><strong>Usage:</strong> about</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Displays the vim-html mission, architectural overview, and a direct link to <a href="https://github.com/smford/vim-html" target="_blank" style="color:var(--accent-tertiary);">https://github.com/smford/vim-html</a>.</div>
+          `;
+        case 'vim':
+        case 'vi':
+        case 'nvim':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: vim — Open or create file in authentic Vim editor</div>
+            <div><strong>Usage:</strong> vim [options] &lt;filename&gt;</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Switches to full-screen Vim buffer with Normal, Insert, Visual, Visual Line, Command, Search, and Replace modes.</div>
+          `;
+        case 'ls':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: ls — List directory contents</div>
+            <div><strong>Usage:</strong> ls [-latrSh1] [path]</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Flags: -l (long format), -a (all hidden files), -t (sort by time), -r (reverse sort), -S (sort by size), -h (human readable).</div>
+          `;
+        case 'cat':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: cat — Print file contents</div>
+            <div><strong>Usage:</strong> cat [--raw] &lt;file&gt;</div>
+            <div style="color:var(--text-secondary); margin-top:4px;">Renders .md files with GitHub Flavored Markdown (headings, tables, alerts, code blocks, images). Use --raw for unrendered text.</div>
+          `;
+        case 'curl':
+          return this.cmdCurl(['--help']);
+        case 'version':
+        case 'ver':
+          return `
+            <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:4px;">help: version — Display system & engine version</div>
+            <div><strong>Usage:</strong> version</div>
+          `;
+        default:
+          break;
+      }
+    }
+
     return `
       <div style="color:var(--accent-secondary); font-weight:bold; margin-bottom:6px;">Available Shell Commands:</div>
       <table class="term-table">
+        <tr><td><strong style="color:var(--accent-primary)">about</strong></td><td>Display vim-html project mission, overview, and GitHub link</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">vim &lt;file&gt;</strong></td><td>Open or create file in authentic Vim editor (vi / nvim)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">curl [-o &lt;file&gt;|-O] &lt;url&gt;</strong></td><td>Download/Fetch file from website or API into VFS or stdout</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">wget [-O &lt;file&gt;] &lt;url&gt;</strong></td><td>Download file from internet URL directly into VFS</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">download &lt;file&gt;</strong></td><td>Download/Export file to your computer's Downloads folder</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">vfs-export / vfs-import</strong></td><td>Backup or restore entire Virtual Filesystem as JSON archive</td></tr>
-        <tr><td><strong style="color:var(--accent-primary)">ls [-la]</strong></td><td>List files in current directory with colors/permissions</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">ls [-latrSh1]</strong></td><td>List files with permissions, sort by time (-t), reverse (-r), all (-a), size (-S)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">tree</strong></td><td>Display directory hierarchy tree</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">cd &lt;dir&gt;</strong></td><td>Change directory (cd ~, cd .., cd /etc)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">pwd</strong></td><td>Print current working directory</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">mkdir &lt;dir&gt;</strong></td><td>Create new directory (-p for recursive)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">touch &lt;file&gt;</strong></td><td>Create empty file</td></tr>
-        <tr><td><strong style="color:var(--accent-primary)">cat &lt;file&gt;</strong></td><td>Print file contents to screen</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">cat &lt;file&gt;</strong></td><td>Print file contents to screen (GFM graphical markdown for .md)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">echo "str" &gt; &lt;file&gt;</strong></td><td>Redirect text output to file</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">rm [-r] &lt;target&gt;</strong></td><td>Remove file or directory</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">cp &lt;src&gt; &lt;dst&gt;</strong></td><td>Copy file</td></tr>
@@ -1231,6 +1480,7 @@ class TerminalShell {
         <tr><td><strong style="color:var(--accent-primary)">grep &lt;pat&gt; &lt;file&gt;</strong></td><td>Search pattern inside file</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">top / ps</strong></td><td>View running processes and live CPU/Memory utilization</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">df / free</strong></td><td>View disk storage and RAM statistics</td></tr>
+        <tr><td><strong style="color:var(--accent-primary)">version / ver</strong></td><td>Display vim-html engine version, build info, and specifications</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">theme &lt;name&gt;</strong></td><td>Switch theme (gruvbox, nord, monokai, dracula, etc.)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">clear</strong></td><td>Clear terminal screen (Ctrl+L)</td></tr>
         <tr><td><strong style="color:var(--accent-primary)">reboot</strong></td><td>Restart kernel boot simulation</td></tr>
@@ -1238,8 +1488,18 @@ class TerminalShell {
     `;
   }
 
+  formatSize(bytes, humanReadable = false) {
+    if (!humanReadable) return String(bytes || 0);
+    const b = Number(bytes) || 0;
+    if (b < 1024) return `${b}`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)}K`;
+    if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)}M`;
+    return `${(b / (1024 * 1024 * 1024)).toFixed(1)}G`;
+  }
+
   formatDate(dateObj) {
     if (!dateObj) dateObj = new Date();
+    if (typeof dateObj === 'string' || typeof dateObj === 'number') dateObj = new Date(dateObj);
     const m = dateObj.toLocaleString('en-US', { month: 'short' });
     const d = dateObj.getDate().toString().padStart(2, ' ');
     const t = dateObj.toTimeString().slice(0, 5);

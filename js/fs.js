@@ -29,6 +29,15 @@ class VirtualFS {
     this.mkdir('/tmp', true);
     this.mkdir('/proc', true);
 
+    const now = Date.now();
+    const tWelcome = new Date(now - 1000 * 60 * 120);     // 2 hours ago
+    const tBackup = new Date(now - 1000 * 60 * 90);       // 1.5 hours ago
+    const tK8s = new Date(now - 1000 * 60 * 60);          // 1 hour ago
+    const tServer = new Date(now - 1000 * 60 * 30);       // 30 mins ago
+    const tNginx = new Date(now - 1000 * 60 * 20);        // 20 mins ago
+    const tArch = new Date(now - 1000 * 60 * 10);         // 10 mins ago
+    const tIncident = new Date(now - 1000 * 60 * 2);      // 2 mins ago
+
     // 1. Welcome Guide
     this.writeFile('/home/user/welcome.txt', 
 `==============================================================================
@@ -62,11 +71,11 @@ class VirtualFS {
   - Top Navigation Bar: Click the "Download" or "Export VFS" buttons!
 
 [ SHELL COMMANDS ]
-  - ls, ls -la, tree, cd, pwd, mkdir, cat, rm, cp, mv, echo, clear, help,
+  - ls, ls -latr, tree, cd, pwd, mkdir, cat, rm, cp, mv, echo, clear, help,
   - top, htop, ps aux, df -h, free -m, dmesg, whoami, uname -a, reboot.
 
 Try editing sample files in /home/user with vim now!
-`);
+`, true, tWelcome);
 
     // 2. SRE Incident Report Template with GFM alerts and SVG image
     this.writeFile('/home/user/incident_report.md',
@@ -103,7 +112,7 @@ Between 19:42 and 20:05 UTC, our European edge gateway experienced a 74% increas
 - [ ] Implement query timeout caps on all migration batch runs
 - [ ] Upgrade RDS Postgres instance class to \`db.r6g.4xlarge\`
 - [ ] Review auto-scaling cooldown intervals in Terraform manifest
-`);
+`, true, tIncident);
 
     // 2.1 Architecture SVG Diagram
     this.writeFile('/home/user/architecture.svg',
@@ -151,7 +160,7 @@ Between 19:42 and 20:05 UTC, our European edge gateway experienced a 74% increas
   <text x="525" y="125" fill="#a89984" font-size="10">PgBouncer Pooler</text>
   <text x="525" y="145" fill="#a89984" font-size="10">PostgreSQL 16 (Primary)</text>
   <circle cx="650" cy="85" r="5" fill="#b8bb26"/>
-</svg>`);
+</svg>`, true, tArch);
 
     // 3. Kubernetes Manifest
     this.writeFile('/home/user/k8s_deployment.yaml',
@@ -175,29 +184,26 @@ spec:
     spec:
       containers:
       - name: gateway
-        image: registry.sre-internal.net/apps/api-gateway:v2.14.0
+        image: nginx:1.27-alpine
         ports:
         - containerPort: 8080
-          name: http
         resources:
-          requests:
-            cpu: "250m"
-            memory: "512Mi"
           limits:
             cpu: "1000m"
-            memory: "1024Mi"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
         readinessProbe:
           httpGet:
             path: /healthz
             port: 8080
           initialDelaySeconds: 5
-          periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /healthz
             port: 8080
           initialDelaySeconds: 15
-          periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
@@ -211,7 +217,7 @@ spec:
   ports:
   - port: 80
     targetPort: 8080
-`);
+`, true, tK8s);
 
     // 4. PostgreSQL Backup Shell Script
     this.writeFile('/home/user/backup_database.sh',
@@ -241,7 +247,7 @@ echo "[+] Syncing to S3: \${S3_BUCKET}"
 aws s3 cp "\${BACKUP_FILE}" "\${S3_BUCKET}" --storage-class GLACIER_IR
 
 echo "[✓] Backup completed successfully."
-`);
+`, true, tBackup);
 
     // 5. Python FastAPI Microservice
     this.writeFile('/home/user/server.py',
@@ -279,14 +285,16 @@ async def health_check() -> Dict[str, Any]:
 @app.post("/api/v1/metrics", status_code=status.HTTP_201_CREATED)
 async def ingest_metrics(payload: MetricPayload):
     if payload.cpu_percent > 95.0:
-        # Trigger autonomous scaling hook
-        return {"status": "alert_triggered", "msg": f"High CPU on {payload.hostname}"}
-    return {"status": "accepted", "id": f"evt_{int(time.time()*1000)}"}
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Node throttled due to high CPU"
+        )
+    return {"status": "accepted", "timestamp": payload.timestamp}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8080, reload=True)
-`);
+    if __name__ == "__main__":
+        import uvicorn
+        uvicorn.run("server:app", host="0.0.0.0", port=8080, reload=True)
+`, true, tServer);
 
     // 6. Nginx Config
     this.writeFile('/etc/nginx/nginx.conf',
@@ -475,7 +483,7 @@ SwapFree:        2097148 kB
     return true;
   }
 
-  writeFile(pathStr, content = '', createParents = true) {
+  writeFile(pathStr, content = '', createParents = true, customMtime = null) {
     const norm = this.normalizePath(pathStr);
     if (norm === '/') return false;
 
@@ -502,7 +510,7 @@ SwapFree:        2097148 kB
       owner: 'user',
       group: 'user',
       size: new Blob([content]).size,
-      mtime: new Date(),
+      mtime: customMtime || new Date(),
       content: content
     };
 

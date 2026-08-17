@@ -27,11 +27,15 @@
 - **Statusline**: Powerline-style statusline displaying active mode, filename, `[+]` modified status, filetype, percentage, and `line,col` coordinates.
 - **Syntax Highlighting**: Real-time syntax token highlighting for Python, JavaScript, JSON, YAML, Shell scripts, Markdown, HTML, CSS, and C.
 
-### 3. 💾 Real File Download & Export
-- **Inside Vim**: Type `:download`, `:export`, or `:w !download` to trigger immediate browser download.
+### 3. 💾 Real File Download, Upload & VFS Restore
+- **Inside Vim**: Type `:download`, `:export`, or `:w !download` to trigger immediate browser download of the active buffer.
 - **In Terminal**: Run `download <filename>` (e.g. `download server.py`).
-- **Top Toolbar**: One-click **Download** button or **Export VFS** to backup all files as a JSON archive.
-- **File Uploads**: Drag-and-drop local files onto the browser window or use the **Upload** toolbar button.
+- **Backup Entire System**: Click **Export VFS** in the top navigation bar or run `export-vfs` / `vfs-export` in the terminal to download all files and directories as a JSON snapshot (`vfs_export_<timestamp>.json`).
+- **Upload & Restore Previous VFS**:
+  - Click the **Import VFS** button in the header toolbar.
+  - Or run `vfs-import <file.json>` in the terminal.
+  - Or simply **drag-and-drop** your previously downloaded `vfs_export_*.json` anywhere onto the browser window. The system will automatically detect the VFS backup signature and restore all files, directories, permissions, and timestamps.
+- **Upload Regular Files**: Click **Upload File** or drag-and-drop any code/text files directly into your current working directory.
 
 ### 4. 🎨 Themes & Retro Aesthetics
 - **9 Curated Color Themes**: Gruvbox Dark, Monokai Pro, Nord Arctic, Dracula, Tokyo Night, One Dark, Solarized Dark, Retro Green CRT, and Retro Amber CRT.
